@@ -1,0 +1,40 @@
+# LaTeX temporary files
+*.aux
+*.log
+*.toc
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# BibTeX / Biber
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+
+# Index files
+*.idx
+*.ilg
+*.ind
+
+# Beamer
+*.nav
+*.snm
+*.vrb
+
+# Intermediate output
+*.dvi
+*.xdv
+*.ps
+
+# Editor backup files
+*~
+*.bak
+*.sav
+.*.swp
+
+# Build directories
+_minted*/
