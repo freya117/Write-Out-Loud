@@ -171,7 +171,7 @@ The application operates on a per-stroke basis within a selected character.
 
 ## 5. Important Notes for Collaborators
 
-* **Stroke Accuracy Logic:** The core stroke comparison happens in `StrokeAnalysis.calculateAccuracy`. `MainView` has been updated to call this function instead of the placeholder. Review and potentially tune the weights and algorithms within `StrokeAnalysis` based on testing.
+* **Stroke Accuracy Logic:** The core stroke comparison happens in `StrokeAnalysis.calculateAccuracy`. Review and potentially tune the weights and algorithms within `StrokeAnalysis` based on testing.
 * **Data Source:** Ensure the `characters.json` file is correctly formatted and included, or rely on the sample data within `CharacterDataManager`. Verify that image and sound asset names match those used in the code/data.
 * **Error Handling:** Basic error handling (e.g., speech errors) logs messages. Consider adding more user-facing alerts or UI states to inform the user about issues like permission denial or data loading failures.
 * **SwiftUI State Management:** The app primarily uses `@StateObject` for controllers/managers owned by `MainView`, `@EnvironmentObject` for shared data (`CharacterDataManager`), and `@Binding` / delegate patterns for communication between views and controllers.
