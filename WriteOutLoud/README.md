@@ -10,41 +10,44 @@ This project is built using SwiftUI for the user interface and leverages Apple's
 
 The project follows a standard Model-View-Controller (MVC) inspired pattern, adapted for SwiftUI's declarative nature, with additional utility and controller components.
 
+<pre>
+```text
 WriteOutLoud/
 ├── Models/
-│   ├── Character.swift         # Defines the main data structure for a Chinese character.
-│   ├── Stroke.swift            # Defines the data structure for a single stroke within a character.
-│   ├── StrokeType.swift        # Enum defining basic stroke types (heng, shu, pie, etc.).
-│   └── CharacterDataManager.swift # Manages loading, storing, and providing character data (from JSON or samples).
+│   ├── Character.swift               # Defines the main data structure for a Chinese character.
+│   ├── Stroke.swift                  # Defines the data structure for a single stroke within a character.
+│   ├── StrokeType.swift              # Enum defining basic stroke types (heng, shu, pie, etc.).
+│   └── CharacterDataManager.swift    # Manages loading, storing, and providing character data (from JSON or samples).
 │
 ├── Views/
-│   ├── MainView.swift          # The central coordinating view, managing controllers and subviews. Acts as delegate.
-│   ├── ReferenceView.swift     # Displays character info, stroke animation, and current stroke details (Left Panel).
-│   ├── WritingPaneView.swift   # Container for the drawing area, including the guide and canvas (Right Panel).
-│   ├── CanvasView.swift        # SwiftUI wrapper for PKCanvasView (the actual drawing surface).
-│   ├── GuideView.swift         # Displays the faint background guide strokes for tracing.
-│   ├── StrokeView.swift        # Renders a single stroke path, capable of animation.
-│   ├── FeedbackView.swift      # Displays stroke-by-stroke or overall character feedback to the user.
-│   ├── CharacterSelectionView.swift # Horizontal scroll view for selecting characters.
-│   └── ButtonStyles.swift      # Custom SwiftUI ButtonStyle definitions for consistent UI.
+│   ├── MainView.swift                # The central coordinating view, managing controllers and subviews. Acts as delegate.
+│   ├── ReferenceView.swift           # Displays character info, stroke animation, and current stroke details (Left Panel).
+│   ├── WritingPaneView.swift         # Container for the drawing area, including the guide and canvas (Right Panel).
+│   ├── CanvasView.swift              # SwiftUI wrapper for PKCanvasView (the actual drawing surface).
+│   ├── GuideView.swift               # Displays the faint background guide strokes for tracing.
+│   ├── StrokeView.swift              # Renders a single stroke path, capable of animation.
+│   ├── FeedbackView.swift            # Displays stroke-by-stroke or overall character feedback to the user.
+│   ├── CharacterSelectionView.swift  # Horizontal scroll view for selecting characters.
+│   └── ButtonStyles.swift            # Custom SwiftUI ButtonStyle definitions for consistent UI.
 │
 ├── Controllers/
-│   ├── StrokeInputController.swift # Manages PKCanvasView interaction, captures stroke points and timings.
-│   ├── SpeechRecognitionController.swift # Manages microphone input, audio processing, and speech transcription via SFSpeechRecognizer.
-│   ├── ConcurrencyAnalyzer.swift # Analyzes stroke accuracy, speech correctness (name match), and timing overlap. Calculates scores and generates feedback messages.
-│   └── FeedbackController.swift  # Manages the state and presentation logic for the FeedbackView, including audio feedback.
+│   ├── StrokeInputController.swift   # Manages PKCanvasView interaction, captures stroke points and timings.
+│   ├── SpeechRecognitionController.swift  # Manages microphone input, audio processing, and speech transcription via SFSpeechRecognizer.
+│   ├── ConcurrencyAnalyzer.swift     # Analyzes stroke accuracy, speech correctness (name match), and timing overlap. Calculates scores and generates feedback messages.
+│   └── FeedbackController.swift      # Manages the state and presentation logic for the FeedbackView, including audio feedback.
 │
 ├── Utils/
-│   ├── StrokeAnalysis.swift    # Contains logic for detailed stroke accuracy calculation (shape, direction, etc.).
-│   ├── TimestampSynchronizer.swift # Helper functions for calculating overlap and lag between time intervals (stroke vs. speech).
-│   ├── PathUtils.swift         # Utility functions for processing CGPoint arrays (scaling, smoothing, bounding box, etc. - Note: Some functions like smooth/simplify might not be used in the current core logic but are available).
-│   └── Extensions.swift        # Useful Swift extensions (e.g., safe collection subscripting, CGRect diagonal, Character.empty).
+│   ├── StrokeAnalysis.swift          # Logic for detailed stroke accuracy calculation (shape, direction, etc.).
+│   ├── TimestampSynchronizer.swift   # Helper functions for calculating overlap and lag between time intervals (stroke vs. speech).
+│   ├── PathUtils.swift               # Utility functions for CGPoint array processing (scaling, smoothing, bounding box, etc.).
+│   └── Extensions.swift              # Useful Swift extensions (safe subscripting, CGRect diagonal, Character.empty).
 │
 └── Other/
-├── WriteOutLoudApp.swift   # Main application entry point (SwiftUI App lifecycle).
-├── Assets.xcassets         # Stores images (character references, trace guides, animations) and potentially app icons, sounds.
-└── characters.json         # (Optional) JSON file containing character data if not using only sample data.
-
+    ├── WriteOutLoudApp.swift         # Main application entry point (SwiftUI App lifecycle).
+    ├── Assets.xcassets               # Images, trace guides, app icons, sound files.
+    └── characters.json               # Optional: JSON file for character data if not using only sample data.
+```
+</pre>
 
 **File Details:**
 
