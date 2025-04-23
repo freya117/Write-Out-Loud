@@ -1,4 +1,5 @@
 // File: Controllers/SpeechRecognitionController.swift
+
 import Foundation
 import Speech // Provides SFSpeechRecognizer, SFSpeechRecognitionTask etc.
 import Combine // For ObservableObject
@@ -51,6 +52,8 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
     private var recognitionTask: SFSpeechRecognitionTask?
     /// The audio engine responsible for capturing microphone input.
     private let audioEngine = AVAudioEngine()
+    /// Flag to track if tap is installed on audio input node
+    private var isTapInstalled = false
 
     // MARK: - Internal State
     /// Timestamp recorded when the current recording session started.
@@ -73,6 +76,11 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
         speechRecognizer.delegate = self // Set delegate to receive availability changes
         // Request authorization when the controller is created
         requestSpeechAuthorization()
+    }
+
+    deinit {
+        // Make sure we clean up audio resources when the controller is deallocated
+        stopAudioEngineAndCleanupSession()
     }
 
     // MARK: - Configuration
@@ -169,17 +177,9 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
             print("Already recording.")
             return
         }
-        if audioEngine.isRunning {
-             print("Warning: Audio engine seems to be running already. Attempting to stop and restart.")
-             stopAudioEngineAndCleanupSession() // Clean up previous state first
-        }
-
-        // --- Cleanup previous task ---
-        if let task = recognitionTask {
-            task.cancel()
-            recognitionTask = nil
-        }
-        recognitionRequest = nil
+        
+        // Always ensure we clean up any existing session before starting a new one
+        stopAudioEngineAndCleanupSession()
 
         // --- Configure Audio Session ---
         let audioSession = AVAudioSession.sharedInstance()
@@ -225,11 +225,20 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
         }
         print("Audio recording format: \(recordingFormat)")
 
+        // Make sure we don't have an existing tap
+        if isTapInstalled {
+            print("Removing existing tap before installing a new one")
+            inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
+
+        // Install tap
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
             self?.recognitionRequest?.append(buffer)
              // Reset silence timer on receiving audio data
              self?.resetStopTimer()
         }
+        isTapInstalled = true
 
         // --- Start Audio Engine ---
         audioEngine.prepare()
@@ -362,7 +371,6 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
                 }
 
                 // Clean up task and request objects
-                self.recognitionRequest?.endAudio()
                 self.recognitionRequest = nil
                 self.recognitionTask = nil // Crucial to nil the task here
                 print("Cleaned up recognition task and request.")
@@ -389,14 +397,18 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
 
         if audioEngine.isRunning {
             audioEngine.stop()
-            // Only remove tap if engine was running and tap was installed
-            // Check if inputNode has a tap installed before removing? Safer approach.
-            // For simplicity, assume tap exists if engine was running.
-            audioEngine.inputNode.removeTap(onBus: 0)
-            print("Audio engine stopped and tap removed.")
-        } else {
-             print("Audio engine was not running, no need to stop.")
+            print("Audio engine stopped.")
         }
+        
+        // Always check and remove tap if installed
+        if isTapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+            print("Audio tap removed.")
+        }
+
+        // End any ongoing recognition request
+        recognitionRequest?.endAudio()
 
         // Deactivate audio session
         let audioSession = AVAudioSession.sharedInstance()
@@ -411,10 +423,16 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
      /// Cleans up audio engine and session after an error during startup.
      private func cleanupAfterError() {
          recognitionRequest?.endAudio() // Ensure request knows audio ended
-         if audioEngine.isRunning { // Should not be running if start failed, but check anyway
+         
+         if audioEngine.isRunning {
              audioEngine.stop()
-             audioEngine.inputNode.removeTap(onBus: 0)
          }
+         
+         if isTapInstalled {
+             audioEngine.inputNode.removeTap(onBus: 0)
+             isTapInstalled = false
+         }
+         
          self.recognitionRequest = nil
          self.recognitionTask = nil
          try? AVAudioSession.sharedInstance().setActive(false) // Try to deactivate session
@@ -424,22 +442,40 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
     func stopRecording() {
         print("Explicit stopRecording() called.")
 
-        // Use optional chaining for safety
-         recognitionRequest?.endAudio() // Signal end of input *before* finishing task
-         recognitionTask?.finish()      // Ask for final result processing
-         // Task completion handler will do the rest of the cleanup (engine stop, session deactivation, nilling task/request)
+        // Signal end of input for the request if it exists
+        recognitionRequest?.endAudio()
+        
+        // Ask for final result and finish the task if it exists
+        recognitionTask?.finish()
+         
+        // Make sure we clean up all audio resources
+        stopAudioEngineAndCleanupSession()
 
-         // We should also stop the timer manually here
-         stopTimer?.invalidate()
-         stopTimer = nil
-
-         // Update recording state if it hasn't been updated by the completion handler yet
-         if isRecording {
-             DispatchQueue.main.async {
-                 self.isRecording = false
-             }
-         }
-        print("Requested recognition task finish.")
+        // Update recording state if needed
+        if isRecording {
+            DispatchQueue.main.async {
+                self.isRecording = false
+            }
+        }
+        
+        // Handle case where task might not notify completion
+        let finalStartTime = self.speechStartTime
+        if let startTime = finalStartTime, self.lastSpeechTime != nil {
+            let endTime = Date()
+            let duration = endTime.timeIntervalSince(startTime)
+            
+            // Reset state
+            self.speechStartTime = nil
+            self.lastSpeechTime = nil
+            
+            // Notify delegate
+            print("Speech recording stopped. Duration: \(String(format: "%.2f", duration))s.")
+            DispatchQueue.main.async {
+                self.delegate?.speechRecordingStopped(at: endTime, duration: duration)
+            }
+        }
+        
+        print("Requested recording stop completed.")
     }
 
     // MARK: - Automatic Stop Timer

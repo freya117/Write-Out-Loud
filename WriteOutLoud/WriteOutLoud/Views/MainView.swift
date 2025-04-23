@@ -465,6 +465,9 @@ extension MainView: StrokeInputDelegate {
                 self.resetCurrentStrokeAction() // Reset if no points drawn
                 return
             }
+            
+            print("DEBUG: Processing stroke with \(drawnPoints.count) points") // Add debug log to verify
+            
             // Create the temporary data
             self.currentStrokeAttemptData = StrokeAttemptData(
                 strokeIndex: strokeIndex,
@@ -490,6 +493,7 @@ extension MainView: StrokeInputDelegate {
             // Analysis happens in speechTranscriptionFinalized or speechRecognitionErrorOccurred or immediately above
         }
     }
+    
 
     func allStrokesCompleted() {
         print("Delegate: allStrokesCompleted")

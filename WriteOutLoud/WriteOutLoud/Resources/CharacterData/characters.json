@@ -1,0 +1,83 @@
+[
+  {
+    "id": "口",
+    "character": "口",
+    "pinyin": "kǒu",
+    "meaning": "mouth",
+    "normalImageName": "kou_normal",
+    "traceImageName": "kou_trace",
+    "animationImageName": "kou_animation",
+    "strokes": [
+      {
+        "strokeName": "竖",
+        "strokeType": "shu",
+        "path": [ [100.0, 100.0], [100.0, 400.0] ],
+        "boundingBox": [100.0, 100.0, 0.0, 300.0],
+        "startTime": 0.0,
+        "endTime": 0.3
+      },
+      {
+        "strokeName": "横折",
+        "strokeType": "hengzhe",
+        "path": [ [100.0, 100.0], [400.0, 100.0], [400.0, 400.0] ],
+        "boundingBox": [100.0, 100.0, 300.0, 300.0],
+        "startTime": 0.35,
+        "endTime": 0.7
+      },
+      {
+        "strokeName": "横",
+        "strokeType": "heng",
+        "path": [ [100.0, 400.0], [400.0, 400.0] ],
+        "boundingBox": [100.0, 400.0, 300.0, 0.0],
+        "startTime": 0.75,
+        "endTime": 1.0
+      }
+    ]
+  },
+  {
+    "id": "人",
+    "character": "人",
+    "pinyin": "rén",
+    "meaning": "person",
+    "normalImageName": "ren_normal",
+    "traceImageName": "ren_trace",
+    "animationImageName": "ren_animation",
+    "strokes": [
+      {
+        "strokeName": "撇",
+        "strokeType": "pie",
+        "path": [ [250.0, 100.0], [100.0, 400.0] ],
+        "boundingBox": [100.0, 100.0, 150.0, 300.0],
+        "startTime": 0.0,
+        "endTime": 0.45
+      },
+      {
+        "strokeName": "捺",
+        "strokeType": "na",
+        "path": [ [250.0, 100.0], [400.0, 400.0] ],
+        "boundingBox": [250.0, 100.0, 150.0, 300.0],
+        "startTime": 0.5,
+        "endTime": 1.0
+      }
+    ]
+  },
+  {
+    "id": "一",
+    "character": "一",
+    "pinyin": "yī",
+    "meaning": "one",
+    "normalImageName": "yi_normal",
+    "traceImageName": "yi_trace",
+    "animationImageName": "yi_animation",
+    "strokes": [
+      {
+        "strokeName": "横",
+        "strokeType": "heng",
+        "path": [ [100.0, 250.0], [400.0, 250.0] ],
+        "boundingBox": [100.0, 250.0, 300.0, 0.0],
+        "startTime": 0.0,
+        "endTime": 1.0
+      }
+    ]
+  }
+]

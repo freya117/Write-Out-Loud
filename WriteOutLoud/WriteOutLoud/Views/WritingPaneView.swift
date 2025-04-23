@@ -12,21 +12,22 @@ struct WritingPaneView: View {
     /// The character currently being practiced (used for the guide).
     let character: Character?
     /// ObservedObject to access the current stroke index from the input controller.
-    @ObservedObject var strokeInputController: StrokeInputController
+    @ObservedObject var strokeInputController: StrokeInputController // This is passed in but not directly used in body here
 
     var body: some View {
         ZStack {
             // --- Background Guide ---
             if let character = character {
                 // *** Uses GuideView defined in Views/GuideView.swift ***
-                GuideView(character: character)
+                GuideView(character: character) // Assumes GuideView exists
                     .foregroundColor(.gray.opacity(0.15)) // Adjust opacity as needed
                     .allowsHitTesting(false) // Ensure guide doesn't block drawing
             }
 
             // --- Drawing Canvas ---
             // *** Uses CanvasView defined in Views/CanvasView.swift ***
-            CanvasView(pkCanvasView: $pkCanvasView)
+            // Your comment said PKCanvasRepresentable, but your previous file was CanvasView. Assuming CanvasView is correct.
+            CanvasView(pkCanvasView: $pkCanvasView) // This correctly passes the binding down
         }
         .background(Color(UIColor.systemBackground)) // Use system background for canvas area
         .clipShape(RoundedRectangle(cornerRadius: 12)) // Optional rounding

@@ -8,17 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		34B33CD72DB81BFB00C46F57 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCF2DB81BA500C46F57 /* AVFoundation.framework */; };
-		34B33CD82DB81BFB00C46F57 /* AVFoundation.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCF2DB81BA500C46F57 /* AVFoundation.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33CDA2DB81BFD00C46F57 /* Combine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD32DB81BB300C46F57 /* Combine.framework */; };
-		34B33CDB2DB81BFD00C46F57 /* Combine.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD32DB81BB300C46F57 /* Combine.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33CDC2DB81BFE00C46F57 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD52DB81BBA00C46F57 /* CoreGraphics.framework */; };
-		34B33CDD2DB81BFE00C46F57 /* CoreGraphics.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD52DB81BBA00C46F57 /* CoreGraphics.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33CDE2DB81BFF00C46F57 /* PencilKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCD2DB81B9E00C46F57 /* PencilKit.framework */; };
-		34B33CDF2DB81BFF00C46F57 /* PencilKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCD2DB81B9E00C46F57 /* PencilKit.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33CE02DB81C0100C46F57 /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD12DB81BAC00C46F57 /* Speech.framework */; };
-		34B33CE12DB81C0100C46F57 /* Speech.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CD12DB81BAC00C46F57 /* Speech.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33CE22DB81C0200C46F57 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCB2DB81B9400C46F57 /* SwiftUI.framework */; };
-		34B33CE32DB81C0200C46F57 /* SwiftUI.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 34B33CCB2DB81B9400C46F57 /* SwiftUI.framework */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34B33D302DB859E000C46F57 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 34B33D2F2DB859B800C46F57 /* README.md */; };
 /* End PBXBuildFile section */
 
@@ -38,25 +32,6 @@
 			remoteInfo = WriteOutLoud;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		34B33CD92DB81BFB00C46F57 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				34B33CDD2DB81BFE00C46F57 /* CoreGraphics.framework in Embed Frameworks */,
-				34B33CDB2DB81BFD00C46F57 /* Combine.framework in Embed Frameworks */,
-				34B33CE12DB81C0100C46F57 /* Speech.framework in Embed Frameworks */,
-				34B33CDF2DB81BFF00C46F57 /* PencilKit.framework in Embed Frameworks */,
-				34B33CE32DB81C0200C46F57 /* SwiftUI.framework in Embed Frameworks */,
-				34B33CD82DB81BFB00C46F57 /* AVFoundation.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		34B33C372DB7D2B700C46F57 /* WriteOutLoud.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WriteOutLoud.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -165,7 +140,6 @@
 				34B33C332DB7D2B700C46F57 /* Sources */,
 				34B33C342DB7D2B700C46F57 /* Frameworks */,
 				34B33C352DB7D2B700C46F57 /* Resources */,
-				34B33CD92DB81BFB00C46F57 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -462,6 +436,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Write Out Loud needs access to the microphone to capture the audio of you speaking stroke names during practice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Write Out Loud needs access to speech recognition to analyze the stroke names you speak during practice.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -501,6 +478,9 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Write Out Loud needs access to the microphone to capture the audio of you speaking stroke names during practice.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Write Out Loud needs access to speech recognition to analyze the stroke names you speak during practice.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
