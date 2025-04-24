@@ -1,119 +1,91 @@
-// FeedbackController.swift
+// File: Controllers/FeedbackController.swift
+// VERSION: Simplified - No longer drives direct UI feedback view
+
 import Foundation
 import Combine
-import SwiftUI // For @Published, Color etc.
 import AVFoundation // For AVAudioPlayer
 
 class FeedbackController: ObservableObject {
-    // Published properties to drive the FeedbackView
-    @Published var currentStrokeFeedback: StrokeFeedback? = nil // Optional, only set after a stroke
+
+    // Published properties for potential final summary (not driving pop-up anymore)
     @Published var overallScoreMessage: String = ""
     @Published var overallScore: Double = 0 // Overall score (0-100)
     @Published var scoreBreakdown: ScoreBreakdown = ScoreBreakdown()
-    @Published var showFeedbackView: Bool = false // Controls visibility of the feedback UI
-    @Published var feedbackType: FeedbackType = .stroke // Determines content of the feedback UI
+    @Published var isOverallFeedbackReady: Bool = false // Flag indicating final calculation is done
 
-    // Keep track of feedback history if needed (e.g., for review)
-    private(set) var strokeFeedbacks: [StrokeFeedback] = []
+    // Keep track of feedback history if needed internally
+    private(set) var strokeFeedbacks: [StrokeFeedback] = [] // Store text feedback if needed internally
 
     // Audio player instance
     private var audioPlayer: AVAudioPlayer?
 
     // Reset state for a new character learning session
     func reset() {
-        currentStrokeFeedback = nil
         overallScoreMessage = ""
         overallScore = 0
         scoreBreakdown = ScoreBreakdown()
-        showFeedbackView = false
+        isOverallFeedbackReady = false
         strokeFeedbacks = []
+        audioPlayer?.stop() // Stop any playing sound
         audioPlayer = nil // Release player
         print("FeedbackController reset.")
     }
 
-    // Update feedback after a single stroke analysis
-    func presentStrokeFeedback(index: Int, feedback: StrokeFeedback) {
-        // Store feedback
+    // Stores text feedback internally (not for UI display)
+    func recordStrokeFeedback(index: Int, feedback: StrokeFeedback) {
         if index >= strokeFeedbacks.count {
             strokeFeedbacks.append(feedback)
         } else {
-            strokeFeedbacks[index] = feedback // Update if re-attempting?
+            strokeFeedbacks[index] = feedback
         }
-
-        // Update published properties for UI
-        currentStrokeFeedback = feedback
-        feedbackType = .stroke
-        showFeedbackView = true // Trigger the view to appear
-
-        print("Presenting stroke \(index) feedback.")
-        // Optionally play a brief sound based on stroke performance?
-        // playSoundForStroke(feedback)
+        print("FeedbackController: Recorded internal feedback for stroke \(index)")
     }
 
-    // Update feedback after the entire character analysis
-    func presentOverallFeedback(score: Double, breakdown: ScoreBreakdown, message: String) {
-        overallScore = score
-        scoreBreakdown = breakdown
-        overallScoreMessage = message
-        feedbackType = .overall
-        currentStrokeFeedback = nil // Clear stroke feedback when showing overall
-        showFeedbackView = true // Trigger the view to appear
 
-        print("Presenting overall feedback. Score: \(String(format: "%.1f", score))")
-        // Play sound based on overall performance
-        playFeedbackSound(overallScore: score)
+    // Calculate and store final feedback state, play sound
+    func calculateAndPresentOverallFeedback(score: Double, breakdown: ScoreBreakdown, message: String) {
+        DispatchQueue.main.async {
+            self.overallScore = score
+            self.scoreBreakdown = breakdown
+            self.overallScoreMessage = message
+            self.isOverallFeedbackReady = true // Mark final calculation as complete
+
+            print("FeedbackController: Calculated overall feedback. Score: \(String(format: "%.1f", score))")
+            // Play sound based on overall performance
+            self.playFeedbackSound(overallScore: score)
+        }
     }
 
-    // Dismiss the feedback view (called by the view itself)
-    func dismissFeedback() {
-        showFeedbackView = false
-        print("Feedback view dismissed.")
-    }
-
-    // Play appropriate sound feedback based on overall score
+    // Play appropriate sound feedback based on overall score (Unchanged)
     private func playFeedbackSound(overallScore: Double) {
         let soundName: String
 
-        // Select sound based on score thresholds (0-100)
-        if overallScore >= 90 { soundName = "excellent_sound" } // Use descriptive filenames
+        if overallScore >= 90 { soundName = "excellent_sound" }
         else if overallScore >= 70 { soundName = "good_sound" }
         else if overallScore >= 50 { soundName = "ok_sound" }
         else { soundName = "try_again_sound" }
 
-        // Assume sound files are MP3 format in the main bundle
         guard let url = Bundle.main.url(forResource: soundName, withExtension: "mp3") else {
             print("Error: Sound file '\(soundName).mp3' not found in bundle.")
             return
         }
 
         do {
-            // Stop previous sound if playing
             audioPlayer?.stop()
-            
-            // Configure audio session for playback (important for proper sound behavior)
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .default) // Adjust category as needed
+            try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
-
-            // Create and play the sound
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.prepareToPlay()
             audioPlayer?.play()
             print("Playing feedback sound: \(soundName).mp3")
         } catch let error as NSError {
-             // More specific error handling
              if error.domain == NSOSStatusErrorDomain && error.code == AVAudioSession.ErrorCode.cannotStartPlaying.rawValue {
                  print("Error playing sound: Cannot start playing. Is another app using audio?")
              } else {
                   print("Error initializing or playing sound file '\(soundName).mp3': \(error.localizedDescription)")
              }
-             audioPlayer = nil // Reset player on error
+             audioPlayer = nil
         }
-    }
-
-    // Enum to differentiate feedback types for the UI
-    enum FeedbackType {
-        case stroke
-        case overall
     }
 }

@@ -2,7 +2,9 @@
 
 ## 1. Introduction
 
-Write Out Loud is an iPadOS application designed to help users learn Chinese characters through a multimodal approach. It combines handwriting input (using Apple Pencil) with simultaneous speech input (vocalizing stroke names). The app provides real-time feedback on stroke accuracy, stroke order adherence (implicitly through the guided process), and the correctness and timing of the spoken stroke names. The primary goal is to reinforce stroke order memory and improve handwriting quality, rather than focusing on perfect pronunciation.
+Write Out Loud is an iPadOS application designed to help users learn Chinese characters through a multimodal approach. It combines handwriting input (using Apple Pencil) with simultaneous speech input (vocalizing stroke names). The app provides feedback *after* the user completes writing the entire character, focusing on reinforcing stroke order memory and improving handwriting quality.
+
+The reference panel (left) shows a static image of the character, its pinyin/meaning, and an animated GIF demonstrating the correct stroke order. The writing panel (right) contains the drawing canvas where the user writes. During practice, a top bar displays the sequence of stroke names ("Number. Pinyin ChineseChar"). After completion, this bar shows vocalization feedback (correct/incorrect icons), and the user's drawn strokes on the canvas are colored based on accuracy (inaccurate strokes turn red). Tapping the canvas after feedback resets the attempt.
 
 This project is built using SwiftUI for the user interface and leverages Apple's PencilKit for handwriting input and the Speech framework for voice recognition.
 
@@ -14,165 +16,176 @@ The project follows a standard Model-View-Controller (MVC) inspired pattern, ada
 ```text
 WriteOutLoud/
 ├── Models/
-│   ├── Character.swift               # Defines the main data structure for a Chinese character.
-│   ├── Stroke.swift                  # Defines the data structure for a single stroke within a character.
-│   ├── StrokeType.swift              # Enum defining basic stroke types (heng, shu, pie, etc.).
-│   └── CharacterDataManager.swift    # Manages loading, storing, and providing character data (from JSON or samples).
+│   ├── Character.swift           # Defines the main data structure for a Chinese character (incl. strokeCount).
+│   ├── Stroke.swift              # Defines the data structure for a single stroke within a character.
+│   ├── StrokeType.swift          # Enum defining basic and compound stroke types (raw values match JSON).
+│   └── CharacterDataManager.swift# Manages loading, storing, and providing character data (from JSON or samples), including images and GIFs.
 │
 ├── Views/
-│   ├── MainView.swift                # The central coordinating view, managing controllers and subviews. Acts as delegate.
-│   ├── ReferenceView.swift           # Displays character info, stroke animation, and current stroke details (Left Panel).
-│   ├── WritingPaneView.swift         # Container for the drawing area, including the guide and canvas (Right Panel).
-│   ├── CanvasView.swift              # SwiftUI wrapper for PKCanvasView (the actual drawing surface).
-│   ├── GuideView.swift               # Displays the faint background guide strokes for tracing.
-│   ├── StrokeView.swift              # Renders a single stroke path, capable of animation.
-│   ├── FeedbackView.swift            # Displays stroke-by-stroke or overall character feedback to the user.
-│   ├── CharacterSelectionView.swift  # Horizontal scroll view for selecting characters.
-│   └── ButtonStyles.swift            # Custom SwiftUI ButtonStyle definitions for consistent UI.
+│   ├── MainView.swift            # Central coordinating view. Manages controllers, state (completion, interaction), delegates, and subviews. Creates final colored feedback drawing.
+│   ├── ReferenceView.swift       # Displays character info (static image, pinyin, meaning) and animated stroke order GIF (Left Panel).
+│   ├── WritingPaneView.swift     # Container for the writing area. Includes StrokeInfoBar, trace image guide, and the main canvas area. Handles tap-to-reset.
+│   ├── CanvasView.swift          # SwiftUI wrapper for the interactive PKCanvasView.
+│   ├── StaticCanvasView.swift    # Helper SwiftUI wrapper to display a static, non-interactive PKDrawing (used for final feedback).
+│   ├── StrokeInfoBar.swift       # (Implicitly part of WritingPaneView) Displays stroke sequence during practice and vocalization feedback after completion.
+│   ├── StrokeNamePill.swift      # (Implicitly part of WritingPaneView) Helper view for displaying individual stroke info/feedback in the StrokeInfoBar.
+│   ├── GifImageView.swift        # SwiftUI wrapper for WKWebView to display animated GIFs from Data.
+│   ├── CharacterSelectionView.swift# Horizontal scroll view for selecting characters.
+│   └── ButtonStyles.swift        # Custom SwiftUI ButtonStyle definitions (if used).
+│   └── (Removed) FeedbackView.swift # Pop-up feedback view is no longer used.
 │
 ├── Controllers/
-│   ├── StrokeInputController.swift   # Manages PKCanvasView interaction, captures stroke points and timings.
-│   ├── SpeechRecognitionController.swift  # Manages microphone input, audio processing, and speech transcription via SFSpeechRecognizer.
-│   ├── ConcurrencyAnalyzer.swift     # Analyzes stroke accuracy, speech correctness (name match), and timing overlap. Calculates scores and generates feedback messages.
-│   └── FeedbackController.swift      # Manages the state and presentation logic for the FeedbackView, including audio feedback.
+│   ├── StrokeInputController.swift # Manages PKCanvasView interaction, captures stroke points and timings. Tracks current expected stroke index.
+│   ├── SpeechRecognitionController.swift # Manages microphone input, audio processing, and speech transcription via SFSpeechRecognizer. Includes auto-stop timer.
+│   ├── ConcurrencyAnalyzer.swift # Analyzes stroke accuracy, speech correctness (name match), and timing overlap. Calculates scores and stores analysis history.
+│   └── FeedbackController.swift  # Simplified: Manages final score calculation state, plays feedback sounds. Does not directly drive UI views.
 │
 ├── Utils/
-│   ├── StrokeAnalysis.swift          # Logic for detailed stroke accuracy calculation (shape, direction, etc.).
-│   ├── TimestampSynchronizer.swift   # Helper functions for calculating overlap and lag between time intervals (stroke vs. speech).
-│   ├── PathUtils.swift               # Utility functions for CGPoint array processing (scaling, smoothing, bounding box, etc.).
-│   └── Extensions.swift              # Useful Swift extensions (safe subscripting, CGRect diagonal, Character.empty).
+│   ├── StrokeAnalysis.swift      # Logic for detailed stroke accuracy calculation (shape, direction, position, proportion).
+│   ├── TimestampSynchronizer.swift # Helper functions for calculating overlap and lag between time intervals (stroke vs. speech).
+│   ├── PathUtils.swift           # Utility functions for CGPoint array processing (scaling, bounding box, etc.).
+│   └── Extensions.swift          # Useful Swift extensions (safe subscripting, CGRect diagonal).
 │
 └── Other/
-    ├── WriteOutLoudApp.swift         # Main application entry point (SwiftUI App lifecycle).
-    ├── Assets.xcassets               # Images, trace guides, app icons, sound files.
-    └── characters.json               # Optional: JSON file for character data if not using only sample data.
+├── WriteOutLoudApp.swift     # Main application entry point (SwiftUI App lifecycle).
+├── Assets.xcassets           # Stores static images (character references, trace guides, app icons).
+├── Characters/               # (Suggested) Folder for GIF animation files (e.g., kou_order.gif) - Add to Target Membership.
+├── Sounds/                   # (Suggested) Folder for sound files (e.g., excellent_sound.mp3) - Add to Target Membership.
+└── characters.json           # Optional: JSON file for character data if not using only sample data. Must include strokeCount.
 ```
 </pre>
 
 **File Details:**
 
-* **Models:** Define the core data structures. `CharacterDataManager` is key for loading and providing the `Character` objects that the rest of the app uses.
-* **Views:** Handle the UI presentation. `MainView` is the root, composing other views like `ReferenceView` and `WritingPaneView`. Specialized views like `StrokeView` and `FeedbackView` handle specific rendering tasks.
-* **Controllers:** Manage input, analysis, and feedback logic.
-    * `StrokeInputController`: Interfaces with PencilKit.
-    * `SpeechRecognitionController`: Interfaces with Speech framework.
-    * `ConcurrencyAnalyzer`: Performs the core comparison and scoring based on data from the input controllers.
-    * `FeedbackController`: Mediates between the `ConcurrencyAnalyzer` and the `FeedbackView`.
-* **Utils:** Contain reusable helper functions and algorithms, separating complex calculations (like stroke analysis) from the controllers.
+* **Models:** Define core data. `CharacterDataManager` loads `Character` objects, images (Assets), and GIF data (Bundle). `Character` now requires `strokeCount`.
+* **Views:** Handle UI.
+    * `MainView`: Orchestrates the flow, manages key state (`isCharacterPracticeComplete`, `isCanvasInteractionEnabled`, `finalDrawingWithFeedback`), handles delegate callbacks, creates the final colored drawing.
+    * `ReferenceView`: Shows static info and GIF animation.
+    * `WritingPaneView`: Contains the writing area. Includes `StrokeInfoBar`, trace image, interactive canvas (during practice) or static canvas (for feedback). Handles tap-to-reset gesture. Controlled by `isInteractionEnabled`.
+    * `StrokeInfoBar`/`StrokeNamePill`: Display stroke sequence ("Number. Pinyin ChineseChar") or vocalization feedback icons. Font size increased.
+    * `CanvasView`: Wrapper for the interactive `PKCanvasView`.
+    * `StaticCanvasView`: New helper to display the final, non-interactive colored drawing.
+    * `FeedbackView`: Removed.
+* **Controllers:** Manage logic.
+    * `StrokeInputController`: Handles drawing input via `PKCanvasViewDelegate`.
+    * `SpeechRecognitionController`: Handles voice input via `SFSpeechRecognizer`.
+    * `ConcurrencyAnalyzer`: Performs analysis, stores results in `analysisHistory`.
+    * `FeedbackController`: Simplified; calculates final scores, plays sounds.
+* **Utils:** Helper functions.
+* **Other:** App entry, Assets, optional JSON data, GIF/Sound file locations.
 
 ## 3. Logic and Pipeline
 
-The application operates on a per-stroke basis within a selected character.
+The application allows users to select a character and practice writing it stroke by stroke while attempting to vocalize the stroke name concurrently. Feedback is provided only *after* the entire character is completed.
 
 1.  **Initialization & Character Selection:**
-    * `CharacterDataManager` loads character data (JSON or samples) on app launch.
-    * `MainView` initializes, sets up its controllers, and displays the UI.
-    * The user selects a character using `CharacterSelectionView`.
+    * `CharacterDataManager` loads character data (JSON or samples).
+    * `MainView` initializes controllers and sets delegates. `CharacterSelectionView` displays choices.
+    * User selects a character.
     * `CharacterDataManager` updates `@Published var currentCharacter`.
-    * `MainView` detects the change (via `.onChange`) and calls `handleCharacterChange`, which resets the state and configures all controllers (`StrokeInputController`, `SpeechRecognitionController`, `ConcurrencyAnalyzer`, `FeedbackController`) for the selected character using `resetForNewCharacterAttempt`.
-    * `ReferenceView` updates to show the new character info and animation guide. `WritingPaneView` shows the new character's trace guide.
-    * `MainView` calls `prepareForStrokeIndex(0)` to ready the `SpeechRecognitionController` for the first stroke's name.
+    * `MainView.handleCharacterChange` is triggered:
+        * Resets state (`isCharacterPracticeComplete = false`, `finalDrawingWithFeedback = nil`).
+        * Calls `resetForNewCharacterAttempt`.
+        * Enables canvas interaction (`isCanvasInteractionEnabled = true`).
+        * Configures controllers (`StrokeInputController`, `SpeechRecognitionController`, `ConcurrencyAnalyzer`, `FeedbackController`) for the selected character.
+        * Prepares `SpeechRecognitionController` for the first stroke's name.
+    * `ReferenceView` updates.
+    * `WritingPaneView` shows the trace image and enables the interactive `CanvasView`. `StrokeInfoBar` shows the stroke sequence, highlighting the first stroke.
 
 2.  **Stroke and Speech Input Loop (Per Stroke):**
-    * The user starts drawing the *current* stroke (`strokeInputController.currentStrokeIndex`) on the `PKCanvasView` within `WritingPaneView`.
+    * User starts drawing the `currentStrokeIndex` stroke on the `PKCanvasView`.
     * `StrokeInputController` detects `canvasViewDidBeginUsingTool`.
-    * It notifies `MainView` via the `strokeBegan` delegate method.
-    * `MainView.strokeBegan`:
-        * Clears any previous temporary data (`currentStrokeAttemptData`).
-        * Calls `prepareForStrokeIndex` again (ensures correct expected name).
+    * `MainView` (delegate `strokeBegan`):
+        * Clears previous temporary data (`currentStrokeAttemptData`).
         * Calls `speechRecognitionController.startRecording()`.
-    * `SpeechRecognitionController`:
-        * Sets up `AVAudioEngine`, `SFSpeechAudioBufferRecognitionRequest`.
-        * Starts capturing audio.
-        * Notifies `MainView` via `speechRecordingStarted` delegate (stores `speechStartTime` in `currentStrokeAttemptData`).
-    * The user draws the stroke and simultaneously speaks the stroke name (e.g., "héng").
-        * `StrokeInputController` captures points via `canvasViewDrawingDidChange`.
-        * `SpeechRecognitionController` receives audio buffers and sends them to `SFSpeechRecognizer`, potentially updating `recognizedTextFragment` via `@Published`.
-    * The user finishes drawing the stroke (lifts the Pencil).
+    * User draws the stroke and speaks the name.
+    * `StrokeInputController` captures points. `SpeechRecognitionController` processes audio.
+    * User finishes drawing the stroke.
     * `StrokeInputController` detects `canvasViewDidEndUsingTool`.
-    * It notifies `MainView` via the `strokeEnded` delegate method, passing the end time, drawn points, expected stroke details, and the stroke index.
-    * `MainView.strokeEnded`:
-        * Creates a `StrokeAttemptData` object holding the stroke index, expected stroke, start/end times, and drawn points.
+    * `MainView` (delegate `strokeEnded`):
+        * Creates `currentStrokeAttemptData` with drawn points, timing, etc.
         * Calls `speechRecognitionController.stopRecording()`.
-    * `SpeechRecognitionController`:
-        * Stops the `AVAudioEngine`, removes the audio tap.
-        * Finalizes the `SFSpeechRecognitionTask`.
-        * The task's completion handler is triggered.
+        * If speech wasn't detected, calls `processCompletedStrokeAttempt` immediately. Otherwise, waits for speech result.
+    * **Speech Result:** `SpeechRecognitionController` calls `speechTranscriptionFinalized` or `speechRecognitionErrorOccurred` delegate in `MainView`.
+    * `MainView` (speech delegate methods): Updates `currentStrokeAttemptData` with speech results. Calls `processCompletedStrokeAttempt()`.
+    * **Processing:** `MainView.processCompletedStrokeAttempt`: Retrieves `StrokeAttemptData`, calls `StrokeAnalysis.calculateAccuracy`, packages data into `StrokeAnalysisInput`, calls `concurrencyAnalyzer.analyzeStroke`.
+    * **Concurrency Analysis:** `ConcurrencyAnalyzer.analyzeStroke`: Calculates scores, stores results in `analysisHistory`, calls `strokeAnalysisCompleted` delegate in `MainView`.
+    * **Post-Analysis:** `MainView` (delegate `strokeAnalysisCompleted`):
+        * Stores feedback text internally (optional).
+        * Clears `currentStrokeAttemptData`.
+        * Calls `moveToNextStrokeAction` to advance the state (`strokeInputController.checkCompletionAndAdvance`).
+        * If more strokes remain, `prepareForSpeech` is called for the next stroke index. `StrokeInfoBar` updates highlight.
+        * If **last stroke** was just analyzed:
+            * `strokeInputController.checkCompletionAndAdvance` calls the `allStrokesCompleted` delegate in `MainView`.
 
-3.  **Analysis and Feedback:**
-    * **Speech Result:**
-        * If speech recognition succeeds, the `SpeechRecognitionController`'s task completion handler calls the `speechTranscriptionFinalized` delegate method in `MainView`.
-        * `MainView.speechTranscriptionFinalized`: Updates the `currentStrokeAttemptData` with the speech end time, transcription text, match status (does transcription contain expected name?), and confidence. It then calls `processCompletedStrokeAttempt()`.
-        * If speech recognition fails (or is stopped before finalizing), the `speechRecognitionErrorOccurred` (or `speechRecordingStopped` timeout) delegate method is called.
-        * `MainView.speechRecognitionErrorOccurred`: Updates `currentStrokeAttemptData` to indicate missing/invalid speech results and calls `processCompletedStrokeAttempt()`.
-    * **Processing:**
-        * `MainView.processCompletedStrokeAttempt`:
-            * Retrieves the `StrokeAttemptData`.
-            * Calls `StrokeAnalysis.calculateAccuracy` (using the *detailed* function, not the placeholder) to get the stroke accuracy score.
-            * Packages all stroke and speech data (times, points, accuracy, transcription, match status) into a `StrokeAnalysisInput` struct.
-            * Calls `concurrencyAnalyzer.analyzeStroke(input:)`.
-            * Clears `currentStrokeAttemptData`.
-    * **Concurrency Analysis:**
-        * `ConcurrencyAnalyzer.analyzeStroke`:
-            * Calculates the `concurrencyScore` using `TimestampSynchronizer.calculateOverlapRatio`.
-            * Stores the results (`StrokeTimingData`).
-            * Generates feedback messages (`StrokeFeedback`) for stroke, speech, and concurrency.
-            * Calls the `strokeAnalysisCompleted` delegate method in `MainView`.
-    * **Feedback Display:**
-        * `MainView.strokeAnalysisCompleted`: Calls `feedbackController.presentStrokeFeedback`.
-        * `FeedbackController`: Updates its `@Published` properties (`currentStrokeFeedback`, `feedbackType = .stroke`, `showFeedbackView = true`). Plays an appropriate sound.
-        * `MainView`'s body detects the change in `feedbackController.showFeedbackView` and displays the `FeedbackView` overlay.
-        * `FeedbackView` shows the specific messages for the completed stroke.
+3.  **End of Character & Final Feedback:**
+    * `MainView` (delegate `allStrokesCompleted`):
+        * Sets `isCanvasInteractionEnabled = false` immediately.
+        * Calls `showFinalResultsAction`.
+    * `MainView.showFinalResultsAction`: Calls `concurrencyAnalyzer.calculateFinalCharacterScore`.
+    * `ConcurrencyAnalyzer` calculates final scores and calls `overallAnalysisCompleted` delegate in `MainView`.
+    * `MainView` (delegate `overallAnalysisCompleted`):
+        * Gets the final `PKDrawing` from the interactive `pkCanvasView`.
+        * Iterates through `concurrencyAnalyzer.analysisHistory`. For each analyzed stroke:
+            * Finds the corresponding stroke in the `PKDrawing`.
+            * Creates a *new* `PKStroke` based on the drawn one.
+            * If accuracy < threshold (e.g., 70%), sets the new stroke's ink color to red. Otherwise, keeps the original color (or sets to green/blue).
+            * Appends the (potentially recolored) new stroke to a list.
+        * Appends any extra drawn strokes (beyond the expected count) with their original color.
+        * Creates `finalFeedbackDrawing = PKDrawing(strokes: coloredStrokes)`.
+        * Calls `feedbackController.calculateAndPresentOverallFeedback` (plays sound).
+        * Sets `finalDrawingWithFeedback` state variable.
+        * Sets `isCharacterPracticeComplete = true`.
+    * **UI Update:**
+        * `WritingPaneView` detects `isCharacterPracticeComplete = true`.
+        * It hides the interactive `CanvasView` and displays the static `finalDrawingWithFeedback` using `StaticCanvasView`.
+        * `StrokeInfoBar` detects `isCharacterPracticeComplete = true` and switches to showing vocalization feedback icons based on `analysisHistory`.
 
-4.  **Advancing:**
-    * The user interacts with the `FeedbackView`.
-        * Tapping "Continue": `FeedbackView` calls `onContinue` -> `MainView.moveToNextStrokeAction`.
-        * Tapping "Close" (or background for stroke feedback): `FeedbackView` calls `onClose` -> `feedbackController.dismissFeedback()`.
-    * `MainView.moveToNextStrokeAction`:
-        * Checks if analysis is pending (it shouldn't be if feedback was shown).
-        * If not the last stroke, calls `strokeInputController.moveToNextStroke()` (increments index, clears canvas) and `prepareForStrokeIndex()` for the *new* index.
-        * If it *was* the last stroke, it calls `strokeInputController.moveToNextStroke()` which triggers the `allStrokesCompleted` delegate and sets the state so the "Show Results" button becomes active.
-
-5.  **Final Results:**
-    * After the last stroke's feedback is dismissed (or "Continue" is pressed on the last stroke feedback), the "Next Stroke" button in `MainView` changes to "Show Results".
-    * The user taps "Show Results".
-    * `MainView.showFinalResultsAction`:
-        * Calls `concurrencyAnalyzer.calculateFinalCharacterScore()`.
-    * `ConcurrencyAnalyzer.calculateFinalCharacterScore`:
-        * Averages the scores from `analysisHistory`.
-        * Calculates the final weighted `overallScore` and `ScoreBreakdown`.
-        * Generates an `overallFeedback` message.
-        * Calls the `overallAnalysisCompleted` delegate method in `MainView`.
-    * `MainView.overallAnalysisCompleted`: Calls `feedbackController.presentOverallFeedback`.
-    * `FeedbackController`: Updates its `@Published` properties (`overallScore`, `scoreBreakdown`, `overallScoreMessage`, `feedbackType = .overall`, `showFeedbackView = true`). Plays a final sound.
-    * `FeedbackView` displays the overall score, breakdown, and summary message.
-    * User can "Try Again" (calls `resetForNewCharacterAttempt`) or "Close".
+4.  **Resetting for New Attempt:**
+    * The `WritingPaneView` (specifically the `GeometryReader` containing the `ZStack`) has an `.onTapGesture`.
+    * If `isPracticeComplete` is true, tapping this area calls the `onTapToWriteAgain` closure provided by `MainView`.
+    * `MainView.onTapToWriteAgain` (which is `resetForNewCharacterAttempt`):
+        * Resets all controllers and state variables (`finalDrawingWithFeedback = nil`, `isCharacterPracticeComplete = false`).
+        * Clears the interactive `pkCanvasView.drawing`.
+        * Re-enables canvas interaction (`isCanvasInteractionEnabled = true`).
+        * Prepares for the first stroke of the current character.
 
 ## 4. Dependencies and Assets
 
-* **Frameworks:**
-    * SwiftUI (UI Framework)
-    * PencilKit (Handwriting Input & Canvas)
-    * Speech (Speech Recognition)
-    * AVFoundation (Audio Engine & Session Management for Speech)
-    * Combine (Used for `@Published` properties and reactive UI updates)
-    * CoreGraphics (Used for CGPoint, CGRect etc.)
-* **Required Assets:**
-    * **Character Data (`characters.json`):** (Optional, if not using samples) Needs to be in the app bundle, formatted according to the `Character` and `Stroke` `Codable` implementation. Specifically:
-        * `strokes`: An array of stroke objects.
-        * `stroke.path`: An array of arrays, where each inner array is `[Double, Double]` representing `[x, y]`.
-        * `stroke.boundingBox`: An array of 4 Doubles `[x, y, width, height]`.
-    * **Images:** Character images (`normalImageName`, `traceImageName`, `animationImageName` referenced in `Character` data) should be placed in `Assets.xcassets`. The names must match those specified in the character data (JSON or samples). A default placeholder `UIImage(systemName: "photo")` is used if an image is missing.
-    * **Sounds:** Feedback sounds (`excellent_sound.mp3`, `good_sound.mp3`, `ok_sound.mp3`, `try_again_sound.mp3` referenced in `FeedbackController`) need to be added to the project bundle.
-* **Permissions:**
-    * The app will require user permission for **Microphone Access** and **Speech Recognition**. The `SpeechRecognitionController` handles requesting this authorization. Ensure the `Info.plist` file contains the necessary keys and descriptions:
-        * `NSSpeechRecognitionUsageDescription`: Explain why the app needs speech recognition (e.g., "To recognize spoken stroke names for interactive learning.").
-        * `NSMicrophoneUsageDescription`: Explain why the app needs microphone access (e.g., "To capture spoken stroke names during practice.").
+**Frameworks:**
+
+* SwiftUI (UI Framework)
+* PencilKit (Handwriting Input & Canvas)
+* Speech (Speech Recognition)
+* AVFoundation (Audio Engine & Session Management for Speech, Sound Playback)
+* Combine (Used for `@Published` properties and reactive UI updates)
+* CoreGraphics (Used for CGPoint, CGRect etc.)
+* WebKit (Used by `GifImageView` to display animated GIFs)
+* UIKit (Used for `UIColor`, `UIImage`)
+
+**Required Assets:**
+
+* **Character Data (`characters.json`):** (Optional, if not using samples) Needs to be in the app bundle, formatted according to the `Character` and `Stroke` Codable implementation. Must include `normalImageName`, `traceImageName`, `animationImageName`, and `strokeCount` fields for each character. Stroke paths and bounding boxes should be defined appropriately.
+* **Static Images (`Assets.xcassets`):** Character images (`normalImageName`, `traceImageName` referenced in Character data) should be placed in `Assets.xcassets`. The Image Set names must exactly match those specified in the character data. Placeholders are used if images are missing.
+* **Animated GIFs (Project Bundle / `Characters/`):** Stroke order animation GIFs (e.g., `kou_order.gif`). The base filename (without `.gif`) must match the `animationImageName` specified in the character data. These files need to be added to the project and included in the Target Membership.
+* **Sounds (Project Bundle / `Sounds/`):** Feedback sounds (`excellent_sound.mp3`, `good_sound.mp3`, `ok_sound.mp3`, `try_again_sound.mp3` referenced in `FeedbackController`) need to be added to the project bundle and included in the Target Membership.
+
+**Permissions:**
+
+The app requires user permission for Microphone Access and Speech Recognition. Ensure the `Info.plist` (or Target Info tab) contains the necessary keys and descriptions:
+
+* `NSSpeechRecognitionUsageDescription`: Explain why the app needs speech recognition (e.g., "To recognize spoken stroke names for practice feedback.").
+* `NSMicrophoneUsageDescription`: Explain why the app needs microphone access (e.g., "To capture audio for recognizing spoken stroke names.").
 
 ## 5. Important Notes for Collaborators
 
-* **Stroke Accuracy Logic:** The core stroke comparison happens in `StrokeAnalysis.calculateAccuracy`. Review and potentially tune the weights and algorithms within `StrokeAnalysis` based on testing.
-* **Data Source:** Ensure the `characters.json` file is correctly formatted and included, or rely on the sample data within `CharacterDataManager`. Verify that image and sound asset names match those used in the code/data.
-* **Error Handling:** Basic error handling (e.g., speech errors) logs messages. Consider adding more user-facing alerts or UI states to inform the user about issues like permission denial or data loading failures.
-* **SwiftUI State Management:** The app primarily uses `@StateObject` for controllers/managers owned by `MainView`, `@EnvironmentObject` for shared data (`CharacterDataManager`), and `@Binding` / delegate patterns for communication between views and controllers.
-* **Concurrency:** Pay attention to `DispatchQueue.main.async` calls when updating state (`@Published` properties or UI-related variables) from background threads or delegate callbacks to prevent UI freezes or crashes.
+* **Delayed Feedback:** All visual feedback (stroke coloring, pronunciation icons) is intentionally delayed until the *entire* character writing attempt is complete. No per-stroke visual feedback is shown during writing.
+* **Final Drawing Coloring:** `MainView` is responsible for creating the final `PKDrawing` with colored strokes in the `overallAnalysisCompleted` delegate. It iterates through the *analysis history* and colors the corresponding strokes in a *copy* of the user's drawing.
+* **Stroke Info Bar:** This bar in `WritingPaneView` displays the stroke sequence ("Number. Pinyin ChineseChar") during practice and switches to vocalization icons (checkmark/cross/question mark) after completion. Font size has been increased.
+* **Interaction Lock & Reset:** The canvas is disabled (`allowsHitTesting(false)`) via `isCanvasInteractionEnabled` state in `MainView` immediately after the last stroke ends and during final feedback display. Tapping the writing pane *after* feedback is shown triggers a reset via the `onTapToWriteAgain` closure passed from `MainView`.
+* **Stroke Count Mismatch Handling:** The final feedback coloring logic in `MainView` now handles cases where the number of strokes drawn by the user doesn't exactly match the number of analyzed strokes, preventing crashes. Extra drawn strokes are shown with their original color.
+* **Data Source:** Ensure `characters.json` (or sample data) is correctly formatted and includes the `strokeCount` field. Verify asset names match those used in the data.
+* **Error Handling:** Basic error handling logs messages. Speech recognition errors (like no speech detected) are handled gracefully by marking the attempt as failed/unavailable. Consider adding more user-facing alerts for critical issues (e.g., permission denial, data loading failures).
+* **SwiftUI State Management:** The app uses `@StateObject`, `@EnvironmentObject`, `@State`, and delegate patterns for state management and communication. Pay attention to main thread updates (`DispatchQueue.main.async`) when updating UI-related state from background threads or delegate callbacks.
+* **Asset Inclusion:** Double-check that all required images (`.png`/`.jpg` in Assets), GIFs (`.gif` in Bundle), and Sounds (`.mp3` in Bundle) are correctly added to the Xcode project and included in the Target Membership for the main application target.
+
