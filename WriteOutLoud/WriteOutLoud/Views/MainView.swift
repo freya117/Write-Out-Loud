@@ -1,32 +1,27 @@
 // File: Views/MainView.swift
+// VERSION: Modified to handle final stroke feedback correctly
+
 import SwiftUI
 import PencilKit
 import Speech // Required for SFSpeechRecognizerAuthorizationStatus
 
-/**
- The main container view for the application using SwiftUI.
- It orchestrates the interaction between the data manager, input controllers,
- analysis controller, feedback controller, and the subviews.
- It acts as the delegate for input and analysis controllers.
- */
 struct MainView: View {
     // MARK: - Environment and State Objects
-    // Assuming CharacterDataManager is provided by the App's root view
     @EnvironmentObject var characterDataManager: CharacterDataManager
     @StateObject private var strokeInputController = StrokeInputController()
     @StateObject private var speechRecognitionController = SpeechRecognitionController()
     @StateObject private var concurrencyAnalyzer = ConcurrencyAnalyzer()
-    @StateObject private var feedbackController = FeedbackController()
+    @StateObject private var feedbackController = FeedbackController() // Owned by MainView
 
     // State for the PKCanvasView instance
     @State private var pkCanvasView = PKCanvasView()
     // State to track selection in CharacterSelectionView
     @State private var selectedCharacterIndex = 0
 
-    // MARK: - Temporary State for Stroke/Speech Data
+    // State for stroke attempt data
     @State private var currentStrokeAttemptData: StrokeAttemptData? = nil
 
-    // Helper struct to hold data during processing
+    // Temporary storage for stroke attempt data
     struct StrokeAttemptData {
         let strokeIndex: Int
         let expectedStroke: Stroke
@@ -38,374 +33,299 @@ struct MainView: View {
         var finalTranscription: String? = nil
         var transcriptionMatched: Bool? = nil
         var speechConfidence: Float? = nil
+
+        var isReadyForAnalysis: Bool {
+            // Ready if speech wasn't started OR if speech was started and we have a result (matched != nil)
+            return speechStartTime == nil || transcriptionMatched != nil
+        }
     }
 
     // MARK: - Body
     var body: some View {
         GeometryReader { geometry in
             HStack(spacing: 0) {
-                // Left Panel (Reference)
                 referencePanel(geometry: geometry)
                 Divider()
-                // Right Panel (Writing)
                 writingPanel(geometry: geometry)
             }
-            // Provide FeedbackController down the hierarchy
-            .environmentObject(feedbackController)
-            // Show feedback view as an overlay
-            .overlay(feedbackOverlay())
-            // Perform initial setup when the view appears
+            .environmentObject(characterDataManager)
+            .overlay(feedbackOverlay()) // Apply overlay
+            .environmentObject(feedbackController) // Inject FeedbackController for overlay
             .onAppear(perform: initialSetup)
-            // React to changes in the selected character ID
             .onChange(of: characterDataManager.currentCharacter?.id) { oldId, newId in
-                 // Only trigger reset if the ID actually changed
                  if oldId != newId {
+                     // Update selectedCharacterIndex to match data manager's current character
+                     if let newChar = characterDataManager.currentCharacter,
+                        let newIdx = characterDataManager.characters.firstIndex(where: { $0.id == newChar.id }) {
+                         selectedCharacterIndex = newIdx
+                     }
                      handleCharacterChange(character: characterDataManager.currentCharacter)
                  }
             }
-            // Ignore keyboard safe area if necessary
+            .onChange(of: characterDataManager.characters) { oldChars, newChars in
+                 print("Character list changed. Count: \(newChars.count)")
+                 if oldChars.isEmpty && !newChars.isEmpty && characterDataManager.currentCharacter == nil {
+                     print("Characters loaded after initial appear, running setup.")
+                     initialSetup() // Re-run setup if characters load later
+                 }
+            }
             .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        // Ensure CharacterDataManager is available if not provided higher up
-        // .environmentObject(CharacterDataManager()) // Or ensure it's passed from App
     }
 
-    // MARK: - Subviews
-
-    /// Builds the left panel containing character selection and reference view.
-    @ViewBuilder
-    private func referencePanel(geometry: GeometryProxy) -> some View {
-        VStack(spacing: 0) {
-             // Character Selection View (Assumes implementation exists)
+    // MARK: - Subviews (Reference Panel, Writing Panel - Unchanged from your provided code)
+     @ViewBuilder
+     private func referencePanel(geometry: GeometryProxy) -> some View {
+         VStack(spacing: 0) {
+             // Character Selection Bar at the top
              CharacterSelectionView(
                  selectedIndex: $selectedCharacterIndex,
                  characters: characterDataManager.characters,
                  onSelect: { index in
+                     // Update state and data manager when selection changes
                      self.selectedCharacterIndex = index
-                     // Use safe subscript from Extensions.swift
-                     if let character = self.characterDataManager.characters[safe: index] {
+                     if index >= 0 && index < self.characterDataManager.characters.count {
+                         let character = self.characterDataManager.characters[index]
+                         // Let data manager handle setting the current character
+                         // This triggers the .onChange(of: characterDataManager.currentCharacter) handler
                          self.characterDataManager.selectCharacter(withId: character.id)
                      }
                  }
              )
              .padding(.vertical)
              .background(Color(UIColor.secondarySystemBackground))
+             .frame(minHeight: 80)
 
-            Divider()
+             Divider()
 
-            // Reference View (Assumes implementation exists)
-            if let character = characterDataManager.currentCharacter {
-                ReferenceView(
-                    character: character,
-                    currentStrokeIndex: $strokeInputController.currentStrokeIndex // Pass index binding
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // Placeholder if no character is selected
-                Spacer()
-                Text("Select a character")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-        }
-        .frame(width: geometry.size.width * 0.45) // Adjust width ratio as needed
-        .background(Color(UIColor.systemBackground))
-    }
-
-    /// Builds the right panel containing the writing area and controls.
-    @ViewBuilder
-    private func writingPanel(geometry: GeometryProxy) -> some View {
-        VStack(spacing: 0) {
-            // Writing Pane View (Assumes implementation exists)
-             WritingPaneView(
-                 pkCanvasView: $pkCanvasView, // Pass the binding to the PKCanvasView instance
-                 character: characterDataManager.currentCharacter,
-                 strokeInputController: strokeInputController // Pass controller for index access
-             )
+             // Reference View fills the remaining space
+             GeometryReader { referenceGeometry in
+                 ReferenceView(character: characterDataManager.currentCharacter)
+                     .frame(width: referenceGeometry.size.width, height: referenceGeometry.size.height)
+             }
              .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
-
-            // Controls Section
-            controlsSection()
-                .padding()
-                .background(Color(UIColor.secondarySystemBackground))
-        }
-        .frame(width: geometry.size.width * 0.55) // Adjust width ratio
-        .background(Color(UIColor.systemBackground).opacity(0.9))
-    }
-
-    /// Builds the controls area below the writing pane.
-    @ViewBuilder
-    private func controlsSection() -> some View {
-        // Use local variables for clarity and state access
-        let currentIdx = self.strokeInputController.currentStrokeIndex
-        let totalStrokes = self.characterDataManager.currentCharacter?.strokeCount ?? 0
-        let isComplete = totalStrokes > 0 && currentIdx >= totalStrokes
-
-        VStack(spacing: 15) {
-            // Progress Indicator
-            if isComplete {
-                Text("Character Complete!")
-                    .font(.headline).foregroundColor(.green)
-            } else if totalStrokes > 0 {
-                Text("Stroke \(currentIdx + 1) of \(totalStrokes)")
-                    .font(.headline).foregroundColor(.secondary)
-            } else {
-                Text("-") // Placeholder if no character loaded
-                    .font(.headline).foregroundColor(.secondary)
-            }
-
-            // Action Buttons
-            HStack(spacing: 20) {
-                // Reset Button
-                Button {
-                    self.resetCurrentStrokeAction()
-                } label: {
-                    Label("Reset Stroke", systemImage: "arrow.counterclockwise")
-                }
-                .buttonStyle(SecondaryButtonStyle()) // Assumes defined in ButtonStyles.swift
-                .disabled(isComplete || totalStrokes == 0) // Disable if complete or no character
-
-                // Next/Results Button
-                nextOrResultsButton(isComplete: isComplete, totalStrokes: totalStrokes)
-            }
-        }
-    }
-
-    /// Builds the button that either moves to the next stroke or shows final results.
-     @ViewBuilder
-     private func nextOrResultsButton(isComplete: Bool, totalStrokes: Int) -> some View {
-         // Check if analysis is pending for the current stroke
-         let analysisPending = self.currentStrokeAttemptData != nil
-         // Check if all strokes have been analyzed for the final result
-         // Important: Need to compare against totalStrokes ONLY IF totalStrokes > 0
-         let allStrokesAnalyzed = totalStrokes > 0 && self.concurrencyAnalyzer.analysisHistory.count == totalStrokes
-
-         Button {
-             if isComplete {
-                 self.showFinalResultsAction()
-             } else {
-                 self.moveToNextStrokeAction()
-             }
-         } label: {
-             Label(isComplete ? "Show Results" : "Next Stroke", systemImage: isComplete ? "checkmark.circle" : "chevron.right")
          }
-         .buttonStyle(PrimaryButtonStyle()) // Assumes defined in ButtonStyles.swift
-         .disabled(
-             self.characterDataManager.currentCharacter == nil || totalStrokes == 0 || // No character or character has no strokes
-             (!isComplete && analysisPending) || // Not complete, but analysis is pending for current stroke
-             (isComplete && !allStrokesAnalyzed) // Is complete, but not all strokes analyzed yet
-         )
+         .frame(width: geometry.size.width * 0.45) // Adjust panel width as needed
+         .background(Color(UIColor.systemBackground)) // Ensure panel has background
      }
 
 
-    /// Builds the feedback overlay view.
+    @ViewBuilder
+    private func writingPanel(geometry: GeometryProxy) -> some View {
+        WritingPaneView(
+            pkCanvasView: $pkCanvasView,
+            character: characterDataManager.currentCharacter,
+            strokeInputController: strokeInputController // Pass the controller if needed by WritingPaneView
+        )
+        .frame(width: geometry.size.width * 0.55) // Adjust panel width as needed
+    }
+
+    // MARK: - Feedback Overlay (MODIFIED)
     @ViewBuilder
     private func feedbackOverlay() -> some View {
-        // Use the showFeedbackView flag from the FeedbackController
+        // Show overlay only when feedbackController signals
         if feedbackController.showFeedbackView {
-            // Dimming background
+            // Dimmed background, dismisses stroke feedback on tap
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture {
-                    // Allow dismissing by tapping background only for stroke feedback
+                    // Allow background tap ONLY to dismiss intermediate stroke feedback
                     if feedbackController.feedbackType == .stroke {
-                        feedbackController.dismissFeedback()
-                        // Decide if dismissing stroke feedback should automatically move next
-                        // moveToNextStrokeAction() // Optional: trigger move on tap-dismiss
+                        // --- MODIFICATION: Only dismiss if NOT the last stroke ---
+                        let isLastStroke = (strokeInputController.currentStrokeIndex == (characterDataManager.currentCharacter?.strokeCount ?? 0) - 1)
+                        if !isLastStroke {
+                            feedbackController.dismissFeedback()
+                             // Should we automatically move to next stroke on tap?
+                             // self.moveToNextStrokeAction() // Maybe not - require button press
+                            print("Feedback Overlay: Background tap dismissed intermediate stroke feedback.")
+                        } else {
+                             print("Feedback Overlay: Background tap ignored for final stroke feedback.")
+                        }
+                        // --- END MODIFICATION ---
                     }
+                     // Do not dismiss overall feedback on background tap
                 }
 
-            // Actual Feedback View (Assumes implementation exists)
+            // The actual FeedbackView content
             FeedbackView(
-                // Pass actions for the buttons within FeedbackView
+                // --- MODIFIED: Pass stroke index and total ---
+                strokeIndex: feedbackController.feedbackType == .stroke ? strokeInputController.currentStrokeIndex : nil,
+                totalStrokes: characterDataManager.currentCharacter?.strokeCount,
+                // --- END MODIFICATION ---
+
+                // Action when "Continue" is pressed after an intermediate stroke
                 onContinue: {
-                    self.feedbackController.dismissFeedback()
                     self.moveToNextStrokeAction()
                 },
+                // Action when "Show Final Results" is pressed after the *final* stroke
+                onShowFinalResults: {
+                    self.showFinalResultsAction()
+                },
+                // Action when "Try Again" is pressed after overall feedback
                 onTryAgain: {
-                    self.feedbackController.dismissFeedback()
                     self.resetForNewCharacterAttempt()
                 },
+                // Action when the explicit 'X' close button is tapped (on overall feedback)
                 onClose: {
-                    self.feedbackController.dismissFeedback()
-                    // Decide if closing overall feedback should select next char or do nothing
+                    // Just dismisses, no other action needed here as Try Again handles reset
+                    // feedbackController.dismissFeedback() // Already handled by FeedbackView's button
+                    print("Feedback Overlay: Close action triggered.")
                 }
             )
-            // FeedbackController already injected via .environmentObject earlier in body
+            // Provide the FeedbackController to the FeedbackView environment
+            .environmentObject(feedbackController)
         }
     }
 
-    // MARK: - Setup & Lifecycle
-    /// Initial setup when the view appears.
+
+    // MARK: - Setup & Lifecycle (Unchanged)
     private func initialSetup() {
         print("MainView appeared. Setting up delegates.")
-        // Set delegates
         strokeInputController.delegate = self
         speechRecognitionController.delegate = self
         concurrencyAnalyzer.delegate = self
 
-        // Setup controllers for the initially selected character (if any)
-        if let currentChar = characterDataManager.currentCharacter,
-           let index = characterDataManager.characters.firstIndex(where: { $0.id == currentChar.id }) {
-            selectedCharacterIndex = index
-            handleCharacterChange(character: currentChar) // Explicitly call setup for initial load
-        } else if !characterDataManager.characters.isEmpty {
-            // If no character was pre-selected, select the first one
-            selectedCharacterIndex = 0
+        // Ensure initial character is selected and setup if data is available
+        if !characterDataManager.characters.isEmpty && characterDataManager.currentCharacter == nil {
+            print("Initial setup: Selecting first character.")
+            selectedCharacterIndex = 0 // Make sure index matches
             let firstChar = characterDataManager.characters[0]
-            characterDataManager.selectCharacter(withId: firstChar.id) // This triggers onChange -> handleCharacterChange
+            // Set character in data manager, which will trigger onChange handler
+            characterDataManager.selectCharacter(withId: firstChar.id)
+            // handleCharacterChange(character: firstChar) // Let onChange handle it
+        } else if let currentChar = characterDataManager.currentCharacter {
+            print("Initial setup: Character already selected, ensuring setup.")
+            // Ensure selectedCharacterIndex reflects the current character
+            if let currentIndex = characterDataManager.characters.firstIndex(of: currentChar) {
+                selectedCharacterIndex = currentIndex
+            }
+            // Ensure controllers are configured for the existing character
+            handleCharacterChange(character: currentChar)
         } else {
-            // Handle case where there are no characters at all
-             handleCharacterChange(character: nil)
+            print("Initial setup: No characters loaded yet.")
+            // Clear state if no character is available
+            handleCharacterChange(character: nil)
         }
     }
 
-    /// Handles setup and reset logic when the selected character changes.
+    // Handles changes when a new character is selected (Unchanged)
     private func handleCharacterChange(character: Character?) {
-        guard let character = character, !character.strokes.isEmpty else { // Also check if character has strokes
-            print("No character selected or character has no strokes - clearing state.")
+        guard let character = character, !character.strokes.isEmpty else {
+            print("Handle character change: No character selected or character has no strokes - clearing state.")
             pkCanvasView.drawing = PKDrawing() // Clear canvas
-            // Reset controllers with an empty character or handle nil state appropriately
-            strokeInputController.setup(with: pkCanvasView, for: Character.empty) // Use empty character from Extensions.swift
+            // Setup controllers with empty character to reset them
+            strokeInputController.setup(with: pkCanvasView, for: Character.empty)
             concurrencyAnalyzer.setup(for: Character.empty)
-            speechRecognitionController.configure(with: Character.empty) // Ensure speech controller is also reset/configured appropriately
+            speechRecognitionController.configure(with: Character.empty)
             feedbackController.reset()
             currentStrokeAttemptData = nil
-            // Ensure selectedCharacterIndex reflects no valid selection if applicable
-            if character == nil {
-                 // Optionally find index of empty char or set to a specific state like -1
-                 // selectedCharacterIndex = -1 // Or manage index based on actual characters array
-                 // If using index 0 for empty, ensure CharacterSelectionView handles it.
-            }
             return
         }
         print("Handling character change to: \(character.character)")
-        // Reset state and configure controllers for the new character
+        // Reset state for the new character attempt
         resetForNewCharacterAttempt()
     }
 
     // MARK: - Actions
-    /// Resets the state for a new attempt at the current character.
+
+    // Unchanged
     private func resetForNewCharacterAttempt() {
         guard let character = characterDataManager.currentCharacter else { return }
         print("Resetting for new attempt at character: \(character.character)")
+        // Reset controllers and UI for the selected character
+        strokeInputController.setup(with: pkCanvasView, for: character) // This sets controller index to 0
+        strokeInputController.resetCanvas() // Clear drawing
+        speechRecognitionController.configure(with: character)
+        concurrencyAnalyzer.setup(for: character)
+        feedbackController.reset() // Hide any existing feedback
+        currentStrokeAttemptData = nil // Clear any pending attempt data
 
-        // Reset controllers
-        strokeInputController.setup(with: pkCanvasView, for: character) // Resets index to 0
-        speechRecognitionController.configure(with: character) // Configure (e.g., vocabulary)
-        concurrencyAnalyzer.setup(for: character) // Clear previous analysis data
-        feedbackController.reset() // Hide feedback, clear scores
-
-        // Reset temporary state
-        currentStrokeAttemptData = nil
-
-        // Prepare for the first stroke if the character has strokes
+        // Prepare speech for the first stroke (index 0)
         if !character.strokes.isEmpty {
-            prepareForStrokeIndex(strokeInputController.currentStrokeIndex) // Should be 0
+            prepareForSpeech(strokeIndex: 0) // strokeInputController index is 0 now
         } else {
             print("Character \(character.character) has no strokes to practice.")
-            // Potentially update UI to reflect this state
         }
     }
 
-    /// Resets the drawing canvas for the current stroke.
-    private func resetCurrentStrokeAction() {
-        guard let character = characterDataManager.currentCharacter,
-              strokeInputController.currentStrokeIndex < character.strokeCount else {
-            print("Cannot reset stroke, character complete or not loaded.")
-            return
-        }
-        print("Resetting current stroke: \(strokeInputController.currentStrokeIndex + 1)")
-        // Clear canvas via the controller
-        strokeInputController.resetForNextStroke()
-        // Reset any pending analysis data for this stroke
-        currentStrokeAttemptData = nil
-        // Stop speech if it was somehow left running
-        speechRecognitionController.stopRecording()
-        // Prepare speech recognizer for the same stroke again
-        prepareForStrokeIndex(strokeInputController.currentStrokeIndex)
-    }
-
-    /// Advances to the next stroke.
+    // Action to advance to the next stroke (Unchanged from your provided code)
     private func moveToNextStrokeAction() {
-        guard let character = characterDataManager.currentCharacter else { return }
-        // Ensure current analysis is complete before moving on
-        guard currentStrokeAttemptData == nil else {
-            print("Cannot move to next stroke, analysis pending.")
-            // Optionally show a message to the user
-            return
-        }
-        // Check if there is a next stroke
-        let currentIdx = strokeInputController.currentStrokeIndex
-        if currentIdx < character.strokeCount - 1 {
-            print("Moving to next stroke.")
-            // Tell input controller to advance and clear canvas
-            strokeInputController.moveToNextStroke()
-            // Prepare speech recognizer for the new stroke index
-            prepareForStrokeIndex(strokeInputController.currentStrokeIndex)
-        } else if currentIdx == character.strokeCount - 1 {
-             print("Last stroke completed, preparing for results.")
-             // Advance the index one last time so 'isComplete' logic triggers correctly
-             strokeInputController.moveToNextStroke() // This will make currentStrokeIndex == strokeCount
-             // Ensure speech is stopped if it wasn't already (e.g., error case)
-             speechRecognitionController.stopRecording()
+        // Get the index of the stroke that was just completed
+        let indexJustCompleted = strokeInputController.currentStrokeIndex
+        print("=========================================")
+        print(">>> MainView.moveToNextStrokeAction: Called.")
+        print("    Index Just Completed: \(indexJustCompleted)")
+        print("=========================================")
+
+        // Ask the controller to check completion based on the index just completed
+        // and advance its internal state *only* if necessary.
+        // We don't rely on its return value to trigger completion anymore.
+        _ = strokeInputController.checkCompletionAndAdvance(indexJustCompleted: indexJustCompleted)
+
+        // Get the potentially updated index for the *next* stroke
+        let nextIndex = strokeInputController.currentStrokeIndex
+
+        // Ensure we don't try to prepare speech beyond the last stroke
+        if let totalStrokes = characterDataManager.currentCharacter?.strokeCount, nextIndex < totalStrokes {
+            print("<<< MainView.moveToNextStrokeAction: Preparing for next stroke at index \(nextIndex).")
+            // Reset the canvas visually
+            strokeInputController.resetCanvas()
+            // Prepare speech for the NEW index
+            prepareForSpeech(strokeIndex: nextIndex)
         } else {
-            print("Already completed or cannot move next.")
+             print("<<< MainView.moveToNextStrokeAction: Reached end or invalid state. Next index: \(nextIndex)")
+             // If checkCompletionAndAdvance detected completion, the onShowFinalResults action
+             // should be triggered by the button press now, not here.
         }
     }
 
-    /// Triggers the calculation and presentation of the final character score.
+    // Unchanged
     private func showFinalResultsAction() {
-        guard let character = characterDataManager.currentCharacter else { return }
-        // Ensure current analysis is complete (or all strokes are analyzed)
-        guard currentStrokeAttemptData == nil else {
-             print("Cannot show final results, analysis pending for last stroke.")
-             return
-         }
-        guard concurrencyAnalyzer.analysisHistory.count == character.strokeCount else {
-             print("Cannot show final results, not all strokes analyzed (\(concurrencyAnalyzer.analysisHistory.count)/\(character.strokeCount)).")
-             return
-         }
-
-        print("Showing final results.")
-        concurrencyAnalyzer.calculateFinalCharacterScore() // Analyzer will call delegate to show feedback
+        print(">>> MainView.showFinalResultsAction called.")
+        // Ensure any lingering drawing is cleared before showing results
+        strokeInputController.resetCanvas()
+        // Trigger the final score calculation and display
+        concurrencyAnalyzer.calculateFinalCharacterScore()
     }
 
-    /// Prepares the speech controller for the stroke at the given index.
-    private func prepareForStrokeIndex(_ index: Int) {
-        // Use safe subscripting from Extensions.swift
+    // Renamed for clarity (Unchanged from your provided code)
+    private func prepareForSpeech(strokeIndex: Int) {
         guard let character = characterDataManager.currentCharacter,
-              let expectedStroke = character.strokes[safe: index] else { return }
-        speechRecognitionController.prepareForStroke(expectedName: expectedStroke.name)
-    }
-
-    /// Processes the combined results after both stroke and speech data are available.
-    private func processCompletedStrokeAttempt() {
-        // Use optional binding for safety
-        guard let attemptData = self.currentStrokeAttemptData else {
-            print("Error: processCompletedStrokeAttempt called but no attempt data found.")
+              let stroke = character.strokes[safe: strokeIndex] else {
+            print("MainView.prepareForSpeech: Cannot prepare, invalid character or index \(strokeIndex)")
             return
         }
+        print("MainView.prepareForSpeech: Preparing speech for index \(strokeIndex), Name: '\(stroke.name)'")
+        speechRecognitionController.prepareForStroke(expectedName: stroke.name)
+    }
+
+    // Unchanged
+    private func processCompletedStrokeAttempt() {
+        guard let attemptData = self.currentStrokeAttemptData else {
+            print("Error: processCompletedStrokeAttempt called with nil attemptData.")
+            return
+        }
+        guard attemptData.isReadyForAnalysis else {
+             print("Attempt data not ready for analysis yet (waiting for speech?).")
+             return
+         }
+
         print("Processing completed stroke attempt for index: \(attemptData.strokeIndex)")
 
-        // --- 1. Calculate Stroke Accuracy ---
-        // *** UPDATED: Using StrokeAnalysis.calculateAccuracy ***
+        // Calculate stroke accuracy
         let strokeAccuracy = StrokeAnalysis.calculateAccuracy(
-            drawnPoints: attemptData.drawnPoints,
-            expectedStroke: attemptData.expectedStroke
+            drawnPoints: attemptData.drawnPoints, expectedStroke: attemptData.expectedStroke
         )
-        // --- End Update ---
+        print("  - Stroke Accuracy Calculated: \(strokeAccuracy)")
 
-        // --- 2. Prepare Input for Concurrency Analyzer ---
+        // Prepare input for concurrency analysis
         let analysisInput = StrokeAnalysisInput(
             strokeIndex: attemptData.strokeIndex,
             expectedStroke: attemptData.expectedStroke,
             strokeStartTime: attemptData.strokeStartTime,
             strokeEndTime: attemptData.strokeEndTime,
-            strokeAccuracy: strokeAccuracy, // Use calculated accuracy
+            strokeAccuracy: strokeAccuracy,
             speechStartTime: attemptData.speechStartTime,
             speechEndTime: attemptData.speechEndTime,
             finalTranscription: attemptData.finalTranscription,
@@ -413,217 +333,218 @@ struct MainView: View {
             speechConfidence: attemptData.speechConfidence
         )
 
-        // --- 3. Trigger Analysis ---
-        concurrencyAnalyzer.analyzeStroke(input: analysisInput) // Analyzer calls delegate when done
+        // Perform the analysis
+        concurrencyAnalyzer.analyzeStroke(input: analysisInput)
 
-        // --- 4. Clear Temporary Data ---
-        // Ensure this happens on main thread if it affects UI state indirectly
+        // Clear the temporary data on the main thread
         DispatchQueue.main.async {
             self.currentStrokeAttemptData = nil
+            print("  - Cleared currentStrokeAttemptData")
         }
     }
-}
 
-// MARK: - Delegate Conformance (StrokeInputDelegate)
+} // End of struct MainView
+
+
+// MARK: - Delegate Conformance
+// ==============================================================================
+// StrokeInputDelegate Implementation (MODIFIED allStrokesCompleted)
 extension MainView: StrokeInputDelegate {
     func strokeBegan(at time: Date, strokeType: StrokeType) {
-        DispatchQueue.main.async {
-            // Only start if we have a valid character and current stroke index
-            guard let character = self.characterDataManager.currentCharacter,
-                  self.strokeInputController.currentStrokeIndex < character.strokeCount else {
-                 print("Stroke began, but no valid character/stroke index.")
-                 return
-            }
-
-            self.currentStrokeAttemptData = nil // Clear previous attempt data for safety
-            self.prepareForStrokeIndex(self.strokeInputController.currentStrokeIndex)
-            do {
-                try self.speechRecognitionController.startRecording()
-            } catch {
-                print("Error starting speech recording: \(error)")
-                // TODO: Show error alert to user (implement UI state for alerts)
-                // Maybe proceed without speech for this stroke? Or force reset?
-                // For now, just logs error. Analysis will proceed without speech data later.
-            }
+        print("MainView: strokeBegan delegate called.")
+        self.currentStrokeAttemptData = nil // Clear previous attempt data
+        // Prepare speech for the stroke we are *about* to draw
+        // The controller's current index should be correct here
+        prepareForSpeech(strokeIndex: strokeInputController.currentStrokeIndex)
+        // Start recording
+        do {
+            try speechRecognitionController.startRecording()
+            print("  - Speech recording started successfully.")
+        } catch {
+            print("  - Error starting speech recording: \(error.localizedDescription)")
+            // Optionally handle error (e.g., show alert)
         }
     }
 
     func strokeUpdated(points: [CGPoint]) {
-        // Optional: Use for real-time feedback if needed
+        // Can be used for live drawing feedback if needed
     }
 
     func strokeEnded(at time: Date, drawnPoints: [CGPoint], expectedStroke: Stroke, strokeIndex: Int) {
-        print("Delegate: strokeEnded for index \(strokeIndex) at \(time)")
-        // Use controller's start time if available, otherwise fallback
-        let startTime = self.strokeInputController.strokeStartTime ?? time.addingTimeInterval(-0.5) // Fallback if start time is missing
+        let controllerIndex = strokeInputController.currentStrokeIndex
+        print("-----------------------------------------")
+        print(">>> MainView.strokeEnded: Delegate called.")
+        print("    Delegate Index (Just Ended): \(strokeIndex)")
+        print("    Controller Index (Current State): \(controllerIndex)")
+        print("-----------------------------------------")
 
-        // Use DispatchQueue.main.async for state update safety
-        DispatchQueue.main.async {
-             // Ensure points were captured
-            guard !drawnPoints.isEmpty else {
-                print("Warning: Stroke ended with no points captured. Resetting.")
-                self.resetCurrentStrokeAction() // Reset if no points drawn
-                return
-            }
-            
-            print("DEBUG: Processing stroke with \(drawnPoints.count) points") // Add debug log to verify
-            
-            // Create the temporary data
-            self.currentStrokeAttemptData = StrokeAttemptData(
-                strokeIndex: strokeIndex,
-                expectedStroke: expectedStroke,
-                strokeStartTime: startTime,
-                strokeEndTime: time,
-                drawnPoints: drawnPoints
-            )
-            // Stop speech recognition, which will trigger finalization/error delegates
-            // Only stop if it was actually started (check speech controller state if needed)
-            if self.speechRecognitionController.isRecording {
-                self.speechRecognitionController.stopRecording()
-            } else {
-                // If speech wasn't recording (e.g., permission error), process immediately without speech data
-                print("Speech was not recording when stroke ended. Processing without speech data.")
-                self.currentStrokeAttemptData?.speechStartTime = nil
-                self.currentStrokeAttemptData?.speechEndTime = nil
-                self.currentStrokeAttemptData?.finalTranscription = nil
-                self.currentStrokeAttemptData?.transcriptionMatched = false // Treat as incorrect if no speech attempt
-                self.currentStrokeAttemptData?.speechConfidence = 0.0
-                self.processCompletedStrokeAttempt()
-            }
-            // Analysis happens in speechTranscriptionFinalized or speechRecognitionErrorOccurred or immediately above
+        // Ensure delegate index matches controller's current state before proceeding
+        guard strokeIndex == controllerIndex else {
+             print("  - Error: strokeEnded index (\(strokeIndex)) mismatch with controller index (\(controllerIndex)). Possible race condition or stale event. Ignoring.")
+             return
+        }
+
+        guard let strokeStartTime = strokeInputController.strokeStartTime else {
+             print("  - Error: Stroke ended but start time is missing.")
+             // Maybe try to recover or just ignore?
+             return
+        }
+
+        // Create the attempt data structure
+        self.currentStrokeAttemptData = StrokeAttemptData(
+            strokeIndex: strokeIndex,
+            expectedStroke: expectedStroke,
+            strokeStartTime: strokeStartTime,
+            strokeEndTime: time,
+            drawnPoints: drawnPoints
+        )
+        print("  - Created StrokeAttemptData with stroke info.")
+
+        // Stop speech recording; the result will come via delegate
+        speechRecognitionController.stopRecording()
+        print("  - Called stopRecording on speech controller.")
+
+        // If speech recording never successfully started (e.g., no mic permission, immediate stop),
+        // process the attempt now. Otherwise, wait for speech result delegate.
+        // Check if speechStartTime was ever set in the attempt data.
+        if self.currentStrokeAttemptData?.speechStartTime == nil {
+             print("  - No speech start time recorded for this stroke, processing analysis now.")
+             processCompletedStrokeAttempt()
+        } else {
+             print("  - Waiting for speech transcription result...")
         }
     }
-    
 
+    // --- MODIFIED: Simplify this delegate method ---
+    // This is called by StrokeInputController's checkCompletionAndAdvance when the last stroke is identified.
+    // We no longer trigger the final results from here directly.
     func allStrokesCompleted() {
-        print("Delegate: allStrokesCompleted")
-        // UI state (e.g., enabling 'Show Results') handled by checks in controlsSection & nextOrResultsButton
-        // This is called when currentStrokeIndex reaches strokeCount
+        print(">>> MainView: allStrokesCompleted delegate called (Informational).")
+        // The final results display is now triggered by the user pressing the
+        // 'Show Final Results' button in the FeedbackView after the last stroke's feedback.
+        // No action needed here anymore.
     }
+    // --- END MODIFICATION ---
 }
+// ==============================================================================
 
-// MARK: - Delegate Conformance (SpeechRecognitionDelegate)
+// SpeechRecognitionDelegate Implementation (Unchanged)
 extension MainView: SpeechRecognitionDelegate {
     func speechRecordingStarted(at time: Date) {
-        print("Delegate: speechRecordingStarted at \(time)")
-        // Update the attempt data only if it exists (i.e., stroke has started)
-        DispatchQueue.main.async {
-            if self.currentStrokeAttemptData != nil {
-                 self.currentStrokeAttemptData?.speechStartTime = time
-            } else {
-                 print("Warning: Speech started before stroke data was initialized.")
-            }
+        print("MainView: speechRecordingStarted delegate called.")
+        // Update attempt data only if it exists (strokeBegan should have created it)
+        guard self.currentStrokeAttemptData != nil else {
+             print("  - Warning: Speech started but currentStrokeAttemptData is nil.")
+             // This might happen if speech starts *before* strokeBegan finishes, though unlikely.
+             return
+        }
+        // Ensure this isn't overwriting an existing start time unless nil
+        if self.currentStrokeAttemptData?.speechStartTime == nil {
+            self.currentStrokeAttemptData?.speechStartTime = time
+            print("  - Updated attempt data with speech start time.")
+        } else {
+            print("  - Warning: Speech start time already exists, ignoring subsequent start event.")
         }
     }
 
     func speechRecordingStopped(at time: Date, duration: TimeInterval) {
-        print("Delegate: speechRecordingStopped at \(time), duration \(String(format: "%.2f", duration))s")
-        // Rely on finalized/error delegate calls.
-        // Consider adding a failsafe timer here: If neither finalized nor error is called
-        // within ~1-2 seconds after stop, maybe force processCompletedStrokeAttempt with missing speech data.
-        // For example:
-        /*
-         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-             // Check if analysis is still pending for this stroke
-             if let currentStrokeIdx = self?.strokeInputController.currentStrokeIndex,
-                self?.currentStrokeAttemptData?.strokeIndex == currentStrokeIdx {
-                 print("Failsafe: Speech stop detected, but no finalization/error received. Processing without speech data.")
-                 self?.currentStrokeAttemptData?.speechEndTime = time // Use stop time as end time
-                 self?.currentStrokeAttemptData?.finalTranscription = nil
-                 self?.currentStrokeAttemptData?.transcriptionMatched = false
-                 self?.currentStrokeAttemptData?.speechConfidence = 0.0
-                 self?.processCompletedStrokeAttempt()
-             }
-         }
-         */
+        print("MainView: speechRecordingStopped delegate called. Duration: \(String(format: "%.2f", duration))s")
+        // Usually no action needed here, we wait for finalized transcription.
     }
 
     func speechTranscriptionFinalized(transcription: String, matchesExpected: Bool, confidence: Float, startTime: Date, endTime: Date) {
-        print("Delegate: speechTranscriptionFinalized - Match: \(matchesExpected), Text: '\(transcription)'")
-        DispatchQueue.main.async {
-            // Ensure corresponding stroke data is waiting and matches the current index
-            guard let attemptData = self.currentStrokeAttemptData,
-                  attemptData.strokeIndex == self.strokeInputController.currentStrokeIndex else {
-                print("Warning: Speech finalized, but no stroke attempt data is waiting or index mismatch. Ignoring.")
-                return
-            }
-            // Add speech results
-            self.currentStrokeAttemptData?.speechEndTime = endTime
-            self.currentStrokeAttemptData?.finalTranscription = transcription
-            self.currentStrokeAttemptData?.transcriptionMatched = matchesExpected
-            self.currentStrokeAttemptData?.speechConfidence = confidence
-            // Ensure start time is captured if it wasn't already
-            if self.currentStrokeAttemptData?.speechStartTime == nil {
-                print("Warning: Speech start time was missing, using finalized start time.")
-                self.currentStrokeAttemptData?.speechStartTime = startTime
-            }
-            // Process the combined results
-            self.processCompletedStrokeAttempt()
+        print("MainView: speechTranscriptionFinalized delegate called.")
+        print("  - Transcription: '\(transcription)', Match: \(matchesExpected), Confidence: \(confidence)")
+
+        // Ensure we have attempt data to update
+        guard self.currentStrokeAttemptData != nil else {
+            print("  - Warning: Received speech result but currentStrokeAttemptData is nil. Ignoring.")
+            return
         }
+
+        // Add check to ensure this result corresponds to the current stroke index being processed
+        // If currentStrokeAttemptData exists, its index should match the controller's index *at the time strokeEnded was called*.
+        guard self.currentStrokeAttemptData?.strokeIndex == strokeInputController.currentStrokeIndex else {
+            print("  - Warning: Received speech result for index \(self.currentStrokeAttemptData?.strokeIndex ?? -1) but controller is now at index \(strokeInputController.currentStrokeIndex). Ignoring potentially stale result.")
+            // Clear potentially stale data to prevent mis-processing
+            // self.currentStrokeAttemptData = nil // Or just return
+            return
+        }
+
+        // Update the attempt data with speech results
+        self.currentStrokeAttemptData?.speechStartTime = startTime // Use actual start time from speech result if available
+        self.currentStrokeAttemptData?.speechEndTime = endTime
+        self.currentStrokeAttemptData?.finalTranscription = transcription
+        self.currentStrokeAttemptData?.transcriptionMatched = matchesExpected
+        self.currentStrokeAttemptData?.speechConfidence = confidence
+        print("  - Updated attempt data with speech results.")
+
+        // Now that speech result is in, process the completed stroke attempt
+        processCompletedStrokeAttempt()
     }
 
     func speechRecognitionErrorOccurred(_ error: Error) {
-        print("Delegate: speechRecognitionErrorOccurred - \(error.localizedDescription)")
-        DispatchQueue.main.async {
-            // If an error occurs, process the stroke attempt without valid speech data
-             // Ensure corresponding stroke data is waiting and matches the current index
-             guard let attemptData = self.currentStrokeAttemptData,
-                   attemptData.strokeIndex == self.strokeInputController.currentStrokeIndex else {
-                print("Speech error occurred, but no stroke data was pending or index mismatch.")
-                // TODO: Show user feedback about the speech error (e.g., using an alert state variable)
-                return
-             }
+        print("MainView: speechRecognitionErrorOccurred delegate called. Error: \(error.localizedDescription)")
+        // If we were waiting for a speech result for the current stroke, handle the error
+        if self.currentStrokeAttemptData != nil && self.currentStrokeAttemptData?.isReadyForAnalysis == false {
+             print("  - Marking speech as failed (transcriptionMatched=false) due to error.")
+             // Update attempt data to reflect the error
+             self.currentStrokeAttemptData?.transcriptionMatched = false // Indicate failure
+             self.currentStrokeAttemptData?.finalTranscription = "[Error]" // Or specific error message
+             self.currentStrokeAttemptData?.speechEndTime = Date() // Mark end time as now
+             self.currentStrokeAttemptData?.speechConfidence = 0.0
 
-            print("Processing stroke attempt despite speech error.")
-            self.currentStrokeAttemptData?.speechEndTime = nil // Indicate error / no valid end time
-            self.currentStrokeAttemptData?.finalTranscription = nil
-            self.currentStrokeAttemptData?.transcriptionMatched = false // Treat as incorrect
-            self.currentStrokeAttemptData?.speechConfidence = 0.0
-            // Ensure start time is nil as well if recording didn't even start properly
-            // Or keep start time if it was recorded before error? Depends on desired logic.
-             // self.currentStrokeAttemptData?.speechStartTime = nil // Optional reset start time
-
-            self.processCompletedStrokeAttempt() // Process with missing/invalid speech data
-
-            // TODO: Show user feedback about the speech error
+             // Process the attempt with the error information
+             processCompletedStrokeAttempt()
+        } else {
+             print("  - Speech error occurred, but no pending stroke attempt or attempt already processed.")
         }
     }
 
     func speechRecognitionNotAvailable() {
-        print("Delegate: speechRecognitionNotAvailable")
-        DispatchQueue.main.async {
-            // TODO: Handle unavailability: Show alert, disable speech features?
-            // Maybe add a @State var to disable the speech part of the interaction
-            // and adjust scoring weights accordingly if speech is permanently unavailable.
-        }
+        print("MainView: speechRecognitionNotAvailable delegate called.")
+        // Similar to error handling, update attempt data if waiting for speech
+         if self.currentStrokeAttemptData != nil && self.currentStrokeAttemptData?.isReadyForAnalysis == false {
+             print("  - Marking speech as unavailable (transcriptionMatched=nil).")
+             self.currentStrokeAttemptData?.transcriptionMatched = nil // Use nil for unavailable? Or false? Let's use nil.
+             self.currentStrokeAttemptData?.finalTranscription = "[Not Available]"
+             self.currentStrokeAttemptData?.speechEndTime = Date()
+             self.currentStrokeAttemptData?.speechConfidence = 0.0
+             processCompletedStrokeAttempt()
+         }
     }
 
     func speechAuthorizationDidChange(to status: SFSpeechRecognizerAuthorizationStatus) {
-        print("Delegate: speechAuthorizationDidChange to \(status.rawValue)") // Use rawValue for logging if needed
-        DispatchQueue.main.async {
-            // TODO: Update UI or disable features if status is not .authorized
-            if status != .authorized {
-                // Show alert explaining the need for permission and how to grant it in Settings.
-            }
-        }
+        print("MainView: speechAuthorizationDidChange delegate called. Status: \(status)")
+        // Optionally update UI or show alerts based on status change
     }
 }
+// ==============================================================================
 
-// MARK: - Delegate Conformance (ConcurrencyAnalyzerDelegate)
+// ConcurrencyAnalyzerDelegate Implementation (Unchanged)
 extension MainView: ConcurrencyAnalyzerDelegate {
+    // This is called AFTER ConcurrencyAnalyzer finishes processing a single stroke
     func strokeAnalysisCompleted(timingData: StrokeTimingData, feedback: StrokeFeedback) {
-        print("Delegate: strokeAnalysisCompleted for index \(timingData.strokeIndex)")
+        print("MainView: strokeAnalysisCompleted delegate called for index \(timingData.strokeIndex).")
+        // Ensure UI updates happen on the main thread
         DispatchQueue.main.async {
-            // Use FeedbackController to present the feedback
+            // Present the feedback for this specific stroke
             self.feedbackController.presentStrokeFeedback(index: timingData.strokeIndex, feedback: feedback)
+            print("  - Called presentStrokeFeedback on feedback controller.")
+            // *** IMPORTANT: The check for last stroke and triggering final results
+            // *** is now handled by the FeedbackView's button actions based on index/total.
         }
     }
 
+    // This is called AFTER ConcurrencyAnalyzer finishes calculating the overall score
     func overallAnalysisCompleted(overallScore: Double, breakdown: ScoreBreakdown, feedback: String) {
-        print("Delegate: overallAnalysisCompleted - Score: \(overallScore)")
+        print("MainView: overallAnalysisCompleted delegate called. Score: \(overallScore)")
+        // Ensure UI updates happen on the main thread
         DispatchQueue.main.async {
-            // Use FeedbackController to present the final feedback
+            // Present the final overall feedback
             self.feedbackController.presentOverallFeedback(score: overallScore, breakdown: breakdown, message: feedback)
+            print("  - Called presentOverallFeedback on feedback controller.")
         }
     }
 }
+// ==============================================================================

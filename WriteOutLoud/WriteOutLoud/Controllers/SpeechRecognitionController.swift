@@ -216,13 +216,10 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
 
         // --- Configure Audio Engine Input ---
         let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
-        guard recordingFormat.sampleRate > 0 else {
-            print("Error: Invalid recording format from input node.")
-            try? audioSession.setActive(false) // Deactivate session
-            throw SpeechError.audioInputError("Invalid recording format")
-        }
+        
+        // This is the key fix - Get the format directly from input node and use that exact format for the tap
+        let recordingFormat = inputNode.inputFormat(forBus: 0) // Use inputFormat instead of outputFormat
+        
         print("Audio recording format: \(recordingFormat)")
 
         // Make sure we don't have an existing tap
@@ -232,7 +229,7 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
             isTapInstalled = false
         }
 
-        // Install tap
+        // Install tap with the input format
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
             self?.recognitionRequest?.append(buffer)
              // Reset silence timer on receiving audio data

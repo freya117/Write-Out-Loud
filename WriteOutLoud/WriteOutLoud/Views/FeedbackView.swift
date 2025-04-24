@@ -9,8 +9,14 @@ struct FeedbackView: View {
     // Observe the FeedbackController provided by the environment
     @EnvironmentObject var feedbackController: FeedbackController
 
+    // --- MODIFIED: Added parameters ---
+    let strokeIndex: Int?       // Index of the stroke this feedback is for (nil for overall)
+    let totalStrokes: Int?      // Total strokes in the character (nil for overall)
+    // --- END MODIFICATION ---
+
     // Actions passed from the parent view (MainView)
-    var onContinue: () -> Void // Action after dismissing stroke feedback
+    var onContinue: () -> Void // Action after dismissing *intermediate* stroke feedback
+    var onShowFinalResults: () -> Void // NEW: Action after dismissing *final* stroke feedback
     var onTryAgain: () -> Void // Action after dismissing overall feedback (to restart char)
     var onClose: () -> Void    // Action for explicit close button
 
@@ -20,7 +26,7 @@ struct FeedbackView: View {
             mainFeedbackContent()
                 .padding(.bottom) // Add some space before buttons
 
-            // Action buttons
+            // Action buttons (logic updated below)
             actionButtons()
         }
         .padding(EdgeInsets(top: 24, leading: 24, bottom: 16, trailing: 24)) // Adjust padding
@@ -47,7 +53,7 @@ struct FeedbackView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.75), value: feedbackController.showFeedbackView)
     }
 
-    // MARK: - View Builders for Content
+    // MARK: - View Builders for Content (Unchanged from your provided code)
 
     @ViewBuilder
     private func mainFeedbackContent() -> some View {
@@ -176,22 +182,35 @@ struct FeedbackView: View {
         .cornerRadius(10)
     }
 
-    // MARK: - Action Buttons ViewBuilder
+    // MARK: - Action Buttons ViewBuilder (MODIFIED)
 
     @ViewBuilder
     private func actionButtons() -> some View {
         HStack(spacing: 15) {
-            // Show appropriate primary action based on feedback type
-            if feedbackController.feedbackType == .stroke {
-                // For stroke feedback, primary action is "Continue"
-                Button("Continue") {
-                    feedbackController.dismissFeedback() // Dismiss first
-                    onContinue() // Then call the action
-                }
-                .buttonStyle(PrimaryButtonStyle()) // Assumes defined elsewhere
-                .frame(maxWidth: .infinity) // Allow button to expand
+            switch feedbackController.feedbackType {
+            case .stroke:
+                // Check if this is the feedback for the *last* stroke
+                let isLastStroke = (strokeIndex != nil && totalStrokes != nil && strokeIndex == totalStrokes! - 1)
 
-            } else {
+                if isLastStroke {
+                    // If it's the last stroke, the button should show final results
+                    Button("Show Final Results") {
+                        feedbackController.dismissFeedback() // Dismiss stroke feedback
+                        onShowFinalResults() // Call the new action
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: .infinity)
+                } else {
+                    // If it's an intermediate stroke, the button should continue
+                    Button("Continue") {
+                        feedbackController.dismissFeedback() // Dismiss stroke feedback
+                        onContinue() // Call the original continue action
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: .infinity)
+                }
+
+            case .overall:
                 // For overall feedback, primary action is "Try Again"
                 Button("Try Again") {
                     feedbackController.dismissFeedback()
@@ -200,17 +219,17 @@ struct FeedbackView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: .infinity)
 
-                 // Optionally add a "Next Character" button if applicable
-                 // Button("Next Character") { /* Action */ }
-                 // .buttonStyle(SecondaryButtonStyle())
-                 // .frame(maxWidth: .infinity)
+                // Optionally add a "Next Character" button if applicable
+                // Button("Next Character") { /* Action */ }
+                // .buttonStyle(SecondaryButtonStyle())
+                // .frame(maxWidth: .infinity)
             }
         }
          // No explicit close button here; rely on background tap for stroke,
          // or the X button overlay for overall feedback.
     }
 
-    // MARK: - Helper Functions
+    // MARK: - Helper Functions (Unchanged)
 
     /// Determines the color based on the score value.
     private func scoreColor(_ score: Double) -> Color {
@@ -224,7 +243,7 @@ struct FeedbackView: View {
     }
 }
 
-// MARK: - Helper Views
+// MARK: - Helper Views (Unchanged from your provided code)
 
 /// Displays a single row of feedback with an icon and text message.
 struct FeedbackMessageRow: View {
@@ -327,7 +346,7 @@ struct CloseButton: View {
 }
 
 
-// MARK: - Preview Provider (If needed)
+// MARK: - Preview Provider (MODIFIED to include new parameters)
 struct FeedbackView_Previews: PreviewProvider {
      // ... (Keep existing preview provider logic, ensure it uses updated structs/initializers) ...
      // Example preview setup (replace with your actual preview data)
@@ -358,19 +377,54 @@ struct FeedbackView_Previews: PreviewProvider {
          let strokeController = createController(type: .stroke)
          let overallController = createController(type: .overall)
 
+         // Sample indices/totals for previewing different button states
+         let intermediateStrokeIndex = 1
+         let finalStrokeIndex = 2
+         let totalStrokes = 3
+
          return Group {
-             FeedbackView(onContinue: {}, onTryAgain: {}, onClose: {})
-                 .environmentObject(strokeController)
-                 .previewDisplayName("Stroke Feedback")
-                 .padding()
-                 .background(Color.blue.opacity(0.1)) // Add background for visibility
+             // Preview Intermediate Stroke Feedback
+             FeedbackView(
+                strokeIndex: intermediateStrokeIndex, // Pass intermediate index
+                totalStrokes: totalStrokes, // Pass total
+                onContinue: { print("Preview: Continue Tapped") },
+                onShowFinalResults: { print("Preview: Show Final Tapped (Shouldn't happen here)") },
+                onTryAgain: {},
+                onClose: {}
+             )
+             .environmentObject(strokeController)
+             .previewDisplayName("Stroke Feedback (Intermediate)")
+             .padding()
+             .background(Color.blue.opacity(0.1))
+
+             // Preview Final Stroke Feedback
+             FeedbackView(
+                strokeIndex: finalStrokeIndex, // Pass final index
+                totalStrokes: totalStrokes, // Pass total
+                onContinue: { print("Preview: Continue Tapped (Shouldn't happen here)") },
+                onShowFinalResults: { print("Preview: Show Final Tapped") },
+                onTryAgain: {},
+                onClose: {}
+             )
+             .environmentObject(strokeController) // Reuse controller, just change context
+             .previewDisplayName("Stroke Feedback (Final)")
+             .padding()
+             .background(Color.orange.opacity(0.1))
 
 
-             FeedbackView(onContinue: {}, onTryAgain: {}, onClose: {})
-                 .environmentObject(overallController)
-                 .previewDisplayName("Overall Feedback")
-                 .padding()
-                 .background(Color.green.opacity(0.1))
+             // Preview Overall Feedback
+             FeedbackView(
+                strokeIndex: nil, // No index for overall
+                totalStrokes: nil, // No total for overall
+                onContinue: {},
+                onShowFinalResults: {},
+                onTryAgain: { print("Preview: Try Again Tapped") },
+                onClose: { print("Preview: Close Tapped") }
+             )
+             .environmentObject(overallController)
+             .previewDisplayName("Overall Feedback")
+             .padding()
+             .background(Color.green.opacity(0.1))
 
          }
           // Preview on an iPad layout

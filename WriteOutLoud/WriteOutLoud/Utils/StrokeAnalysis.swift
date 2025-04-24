@@ -1,7 +1,7 @@
 // File: Utils/StrokeAnalysis.swift
 import Foundation
 import CoreGraphics
-import UIKit // Keep for hypot if needed, or use sqrt(pow(dx,2)+pow(dy,2))
+// import UIKit // Keep for hypot if needed, or use sqrt(pow(dx,2)+pow(dy,2))
 
 /**
  Provides stroke analysis capabilities for evaluating handwritten strokes.

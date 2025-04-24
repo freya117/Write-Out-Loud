@@ -3,7 +3,7 @@ import Foundation
 import Combine
 import AVFoundation // For AVAudioSession potentially
 
-// MARK: - Input/Output Structs (remain the same)
+// MARK: - Input/Output Structs (unchanged)
 struct StrokeAnalysisInput {
     let strokeIndex: Int
     let expectedStroke: Stroke
@@ -46,7 +46,7 @@ struct StrokeFeedback {
     var concurrencyMessage: String = ""
 }
 
-// MARK: - Delegate Protocol (remains the same - no :AnyObject)
+// MARK: - Delegate Protocol (unchanged)
 protocol ConcurrencyAnalyzerDelegate {
     func strokeAnalysisCompleted(timingData: StrokeTimingData, feedback: StrokeFeedback)
     func overallAnalysisCompleted(overallScore: Double, breakdown: ScoreBreakdown, feedback: String)
@@ -54,21 +54,21 @@ protocol ConcurrencyAnalyzerDelegate {
 
 // MARK: - ConcurrencyAnalyzer Class
 class ConcurrencyAnalyzer: ObservableObject {
-    // Published Properties (remain the same)
+    // Published Properties (unchanged)
     @Published var analysisHistory: [StrokeTimingData] = []
     @Published var currentOverallScore: Double = 0
     @Published var currentScoreBreakdown: ScoreBreakdown = ScoreBreakdown()
 
-    // Delegate (remains the same - no weak)
+    // Delegate (unchanged)
     var delegate: ConcurrencyAnalyzerDelegate?
 
-    // Internal State (remain the same)
-    private var characterStrokes: [Stroke] = []
+    // Internal State
+    private var character: Character? // CHANGED: Store full Character object to access strokeCount
     private var currentStrokeTimings: [StrokeTimingData] = []
 
-    // Setup (remains the same)
+    // Setup (MODIFIED to store character)
     func setup(for character: Character) {
-        self.characterStrokes = character.strokes
+        self.character = character
         self.currentStrokeTimings.removeAll()
         self.analysisHistory.removeAll()
         self.currentOverallScore = 0
@@ -76,10 +76,10 @@ class ConcurrencyAnalyzer: ObservableObject {
         print("ConcurrencyAnalyzer setup for character \(character.character) with \(character.strokeCount) strokes.")
     }
 
-    // Analysis (remains the same)
+    // Analysis (unchanged)
     func analyzeStroke(input: StrokeAnalysisInput) {
-        guard input.strokeIndex < characterStrokes.count else {
-            print("Error: Stroke index \(input.strokeIndex) out of bounds.")
+        guard let character = character, input.strokeIndex < character.strokeCount else {
+            print("Error: Stroke index \(input.strokeIndex) out of bounds or character not set.")
             return
         }
         guard input.expectedStroke.order == input.strokeIndex + 1 else {
@@ -127,7 +127,7 @@ class ConcurrencyAnalyzer: ObservableObject {
         }
     }
 
-    // generateStrokeFeedback (Add @unknown default if needed, remains same otherwise)
+    // generateStrokeFeedback (unchanged)
     private func generateStrokeFeedback(for timing: StrokeTimingData) -> StrokeFeedback {
         var feedback = StrokeFeedback()
 
@@ -149,27 +149,36 @@ class ConcurrencyAnalyzer: ObservableObject {
             }
         case nil:
             feedback.speechMessage = "Remember to say the stroke name ('\(timing.strokeName)') aloud!"
-        // Add @unknown default for future proofing, though Bool? only has 3 states
         @unknown default:
-             print("Warning: Unexpected case in transcriptionMatched switch: \(String(describing: timing.transcriptionMatched))")
-             feedback.speechMessage = "Error processing speech result."
+            print("Warning: Unexpected case in transcriptionMatched switch: \(String(describing: timing.transcriptionMatched))")
+            feedback.speechMessage = "Error processing speech result."
         }
 
         // 3. Concurrency feedback
         if timing.speechStartTime != nil {
-             if timing.concurrencyScore >= 85 { feedback.concurrencyMessage = "Great timing - speech and writing synced!" }
-             else if timing.concurrencyScore >= 60 { feedback.concurrencyMessage = "Good timing synchronization." }
-             else if timing.concurrencyScore >= 30 { feedback.concurrencyMessage = "Try to speak *while* drawing the stroke." }
-             else { feedback.concurrencyMessage = "Work on synchronizing your speech and writing." }
+            if timing.concurrencyScore >= 85 { feedback.concurrencyMessage = "Great timing - speech and writing synced!" }
+            else if timing.concurrencyScore >= 60 { feedback.concurrencyMessage = "Good timing synchronization." }
+            else if timing.concurrencyScore >= 30 { feedback.concurrencyMessage = "Try to speak *while* drawing the stroke." }
+            else { feedback.concurrencyMessage = "Work on synchronizing your speech and writing." }
         } else {
-             feedback.concurrencyMessage = ""
+            feedback.concurrencyMessage = ""
         }
 
         return feedback
     }
 
-    // calculateFinalCharacterScore (Pass speechAttemptCount)
+    // calculateFinalCharacterScore (MODIFIED to validate stroke count)
     func calculateFinalCharacterScore() {
+        guard let character = character else {
+            print("Error: No character set for final score calculation.")
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.currentOverallScore = 0
+                self.currentScoreBreakdown = ScoreBreakdown()
+                self.delegate?.overallAnalysisCompleted(overallScore: 0, breakdown: self.currentScoreBreakdown, feedback: "No character data available.")
+            }
+            return
+        }
         guard !currentStrokeTimings.isEmpty else {
             print("No stroke data to calculate final score.")
             DispatchQueue.main.async { [weak self] in
@@ -180,12 +189,26 @@ class ConcurrencyAnalyzer: ObservableObject {
             }
             return
         }
+        // CHANGED: Validate that all strokes have been analyzed
+        guard currentStrokeTimings.count == character.strokeCount else {
+            print("Error: Incomplete strokes analyzed (\(currentStrokeTimings.count)/\(character.strokeCount)). Not calculating final score.")
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.currentOverallScore = 0
+                self.currentScoreBreakdown = ScoreBreakdown()
+                self.delegate?.overallAnalysisCompleted(
+                    overallScore: 0,
+                    breakdown: self.currentScoreBreakdown,
+                    feedback: "Incomplete strokes (\(self.currentStrokeTimings.count)/\(character.strokeCount)). Please complete all strokes."
+                )
+            }
+            return
+        }
 
         let numStrokes = Double(currentStrokeTimings.count)
         var totalStrokeAccuracy: Double = 0
         var totalSpeechCorrectnessScore: Double = 0
         var totalConcurrencyScore: Double = 0
-        // *** Declare speechAttemptCount here ***
         var speechAttemptCount: Int = 0
 
         for timing in currentStrokeTimings {
@@ -193,7 +216,7 @@ class ConcurrencyAnalyzer: ObservableObject {
             totalSpeechCorrectnessScore += (timing.transcriptionMatched == true) ? 100.0 : 0.0
             if timing.speechStartTime != nil {
                 totalConcurrencyScore += timing.concurrencyScore
-                speechAttemptCount += 1 // Increment here
+                speechAttemptCount += 1
             }
         }
 
@@ -216,14 +239,13 @@ class ConcurrencyAnalyzer: ObservableObject {
             self.currentOverallScore = finalOverallScore
         }
 
-        print("Final Character Score Calculation:")
+        print("Final Character Score Calculation for '\(character.character)':")
         print("  Avg Accuracy: \(String(format: "%.1f", breakdown.strokeAccuracy))")
         print("  Avg Speech Correctness: \(String(format: "%.1f", breakdown.speechCorrectness))")
         print("  Avg Concurrency (on \(speechAttemptCount) attempts): \(String(format: "%.1f", breakdown.concurrencyScore))")
         print("  Overall Score: \(String(format: "%.1f", finalOverallScore))")
 
-        // *** Pass speechAttemptCount to feedback generation ***
-        let overallFeedback = generateOverallFeedbackMessage(score: finalOverallScore, breakdown: breakdown, speechAttempts: speechAttemptCount) // Pass it here
+        let overallFeedback = generateOverallFeedbackMessage(score: finalOverallScore, breakdown: breakdown, speechAttempts: speechAttemptCount)
 
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.overallAnalysisCompleted(
@@ -234,9 +256,7 @@ class ConcurrencyAnalyzer: ObservableObject {
         }
     }
 
-    // generateOverallFeedbackMessage (Accept and use speechAttempts)
-    /// Generates an overall feedback message based on the final scores.
-    // *** MODIFIED: Added speechAttempts parameter to the signature ***
+    // generateOverallFeedbackMessage (unchanged)
     private func generateOverallFeedbackMessage(score: Double, breakdown: ScoreBreakdown, speechAttempts: Int) -> String {
         var messages: [String] = []
 
@@ -250,16 +270,14 @@ class ConcurrencyAnalyzer: ObservableObject {
         else if breakdown.speechCorrectness >= 60 { messages.append("You named most strokes correctly.") }
         else { messages.append("Review the stroke names carefully.") }
 
-        // Concurrency feedback (Use speechAttempts parameter)
-        // *** FIXED: Use the passed-in speechAttempts parameter ***
+        // Concurrency feedback
         if speechAttempts > 0 && breakdown.speechCorrectness > 30 {
-             if breakdown.concurrencyScore >= 80 { messages.append("Great job syncing speech and writing!") }
-             else if breakdown.concurrencyScore >= 50 { messages.append("Work on your timing synchronization.") }
-             else { messages.append("Try saying the name *while* drawing.") }
-        } else if speechAttempts > 0 { // User attempted speech but got names mostly wrong
-             messages.append("Focus on saying the correct names first, then work on timing.")
+            if breakdown.concurrencyScore >= 80 { messages.append("Great job syncing speech and writing!") }
+            else if breakdown.concurrencyScore >= 50 { messages.append("Work on your timing synchronization.") }
+            else { messages.append("Try saying the name *while* drawing.") }
+        } else if speechAttempts > 0 {
+            messages.append("Focus on saying the correct names first, then work on timing.")
         }
-        // If speechAttempts is 0, no concurrency feedback is given.
 
         // Overall performance message
         if score >= 90 { messages.append("Outstanding work!") }

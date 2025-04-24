@@ -21,11 +21,3 @@ extension Collection {
     }
 }
 
-// MARK: - Character Extension (Empty Character)
-// Keep this useful extension here as well
-extension Character {
-    /// Provides an empty Character instance for default initialization or placeholders.
-    static var empty: Character {
-        .init(id: "", character: "", pinyin: "", meaning: "", strokes: [], difficulty: 0, tags: [], normalImageName: "", traceImageName: "", animationImageName: "")
-    }
-}

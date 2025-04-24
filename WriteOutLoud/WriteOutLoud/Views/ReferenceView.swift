@@ -1,134 +1,122 @@
 // File: Views/ReferenceView.swift
+// VERSION: Adjusted image/GIF sizes and spacing (Image Larger, GIF Smaller, White GIF BG)
+
 import SwiftUI
 
 /**
- Displays the reference information for the current character, including its
- visual representation, pinyin, meaning, and an animated stroke-order guide.
+ Displays the reference information for the current character, including a
+ static image, pinyin, meaning, and an animated GIF showing stroke order.
  */
 struct ReferenceView: View {
     // MARK: - Properties
     let character: Character?
-    @Binding var currentStrokeIndex: Int // Provided by the coordinator/parent
 
-    @State private var isAnimating: Bool = false
-    @State private var animationStep: Int = 0
-    @State private var animationTimer: Timer?
-
-    private let animationInterval: TimeInterval = 0.8
-    private let delayBetweenStrokes: TimeInterval = 0.2
+    // Access DataManager to load images and GIF data
+    @EnvironmentObject var characterDataManager: CharacterDataManager
 
     // MARK: - Body
     var body: some View {
-        VStack(spacing: 16) {
-            if let character = character {
-                characterInfoHeader(character: character)
-                strokeAnimationArea(character: character)
-                    .frame(minHeight: 300, maxHeight: 400)
-                Spacer()
-            } else {
-                Spacer()
-                Text("Select a character").font(.title).foregroundColor(.secondary)
-                Spacer()
+        // Use GeometryReader to make GIF size relative if needed
+        GeometryReader { geometry in
+            VStack(spacing: 0) { // Remove default spacing, control manually
+                if let character = character {
+
+                    // --- Header: Static Image, Pinyin, Meaning ---
+                    characterInfoHeader(character: character)
+                         // Give header padding at bottom
+                        .padding(.bottom, geometry.size.height * 0.05) // e.g., 5% of height
+
+                    // --- Animated GIF Area ---
+                    gifAnimationArea(character: character, containerSize: geometry.size) // Pass size
+                         // Use remaining flexible space for the GIF container
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.bottom) // Padding below GIF
+
+                    Spacer() // Pushes content towards top
+
+                } else {
+                    // Placeholder if no character selected
+                    Spacer()
+                    Text("Select a character")
+                        .font(.title)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
             }
-        }
-        .padding()
-        .onDisappear(perform: stopAnimation)
-        // *** MODIFIED: Updated onChange syntax for character ID ***
-        .onChange(of: character?.id) { oldId, newId in
-             // Only reset if the ID actually changed
-             if oldId != newId {
-                 resetAnimationState()
-             }
-        }
-        // *** MODIFIED: Updated onChange syntax for currentStrokeIndex ***
-        .onChange(of: currentStrokeIndex) { oldIndex, newIndex in
-            // If external index changes (e.g., user moves next), reset animation step
-            if !isAnimating {
-                animationStep = newIndex
-            }
+            .padding() // Padding for the whole VStack content
+            .frame(width: geometry.size.width, height: geometry.size.height) // Fill the geometry reader
         }
     }
 
-    // MARK: - Subviews (remain the same)
+    // MARK: - Subviews
+
+    /// Displays the static reference image, pinyin, and meaning.
     @ViewBuilder
     private func characterInfoHeader(character: Character) -> some View {
-        VStack(alignment: .center, spacing: 4) {
-            Text(character.character).font(.system(size: 80))
-            Text("\(character.pinyin) - \(character.meaning)").font(.title3).foregroundColor(.secondary)
+        VStack(alignment: .center, spacing: 10) {
+            // --- Static Reference Image ---
+            Group {
+                if let uiImage = characterDataManager.getCharacterImage(character, type: .normal) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        // Keep larger frame size
+                        .frame(maxWidth: 440, maxHeight: 440)
+                } else {
+                    Image(systemName: "photo.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 150, height: 150)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(10)
+            .background(Color(UIColor.systemGray6)) // Keep header background subtle gray
+            .cornerRadius(10)
+
+            // --- Pinyin and Meaning ---
+            Text("\(character.pinyin) - \(character.meaning)")
+                .font(.title2)
+                .foregroundColor(.primary)
+                .padding(.top, 5)
         }
-        .padding(.bottom)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Displays the animated GIF using the GifImageView wrapper.
     @ViewBuilder
-    private func strokeAnimationArea(character: Character) -> some View {
-        VStack(spacing: 10) {
-            ZStack {
-                // Background guide
-                ForEach(character.strokes) { stroke in
-                    StrokeView(stroke: stroke, animationProgress: 1.0)
-                        .foregroundColor(.gray.opacity(0.15))
-                }
-                // Completed strokes
-                ForEach(0..<animationStep, id: \.self) { index in
-                    if let stroke = character.strokes[safe: index] {
-                        StrokeView(stroke: stroke, animationProgress: 1.0)
-                            .foregroundColor(.primary.opacity(0.7))
-                    }
-                }
-                // Animating stroke
-                if let currentAnimatingStroke = character.strokes[safe: animationStep], isAnimating {
-                    StrokeView(stroke: currentAnimatingStroke, animationProgress: 1.0, isAnimating: true, duration: animationInterval)
-                        .foregroundColor(.blue)
-                }
-                // Static highlight stroke
-                else if let currentPracticeStroke = character.strokes[safe: currentStrokeIndex] {
-                    StrokeView(stroke: currentPracticeStroke, animationProgress: 1.0)
-                        .foregroundColor(.blue.opacity(0.8))
+    private func gifAnimationArea(character: Character, containerSize: CGSize) -> some View {
+         // Keep smaller GIF size
+         let gifSize = min(containerSize.width, containerSize.height) * 0.35
+
+        ZStack { // Use ZStack for centering
+             // Background container
+             RoundedRectangle(cornerRadius: 12)
+                 // *** SET BACKGROUND TO WHITE ***
+                 .fill(Color.white)
+                 // Use slightly darker border for contrast on white
+                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.5), lineWidth: 1))
+
+             // The GIF view itself
+            Group {
+                if let gifData = characterDataManager.getCharacterGifData(character) {
+                    GifImageView(data: gifData)
+                        .frame(width: gifSize, height: gifSize) // Apply smaller frame
+
+                } else {
+                    // Placeholder if GIF data loading fails
+                     VStack {
+                         Image(systemName: "film.slash")
+                             .font(.largeTitle)
+                             .foregroundColor(.secondary)
+                         Text("Animation N/A")
+                             .font(.caption)
+                             .foregroundColor(.secondary)
+                     }
+                     .frame(width: gifSize, height: gifSize) // Apply frame to placeholder too
                 }
             }
-            .padding(20)
-            .aspectRatio(1, contentMode: .fit)
-            .background(Color(UIColor.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.3), lineWidth: 1))
-
-            strokeInfoAndControls(character: character)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity) // Allow ZStack container to expand
     }
-
-    @ViewBuilder
-    private func strokeInfoAndControls(character: Character) -> some View {
-        let displayIndex = currentStrokeIndex
-        HStack {
-            if let stroke = character.strokes[safe: displayIndex] {
-                 VStack(alignment: .leading) {
-                     Text("Stroke \(displayIndex + 1): \(stroke.name)").font(.headline)
-                     Text("Say \"\(stroke.name)\"").font(.subheadline).foregroundColor(.secondary)
-                 }
-                 Spacer()
-            } else if displayIndex >= character.strokeCount && character.strokeCount > 0 {
-                 Text("Character Complete").font(.headline).foregroundColor(.green)
-                 Spacer()
-            } else {
-                 Text(" ").font(.headline)
-                 Spacer()
-            }
-
-            Button {
-                toggleAnimation()
-            } label: {
-                Label(isAnimating ? "Stop" : "Animate", systemImage: isAnimating ? "stop.fill" : "play.fill")
-            }
-            .buttonStyle(.bordered)
-            .disabled(character.strokes.isEmpty)
-        }
-        .padding(.horizontal)
-    }
-
-    // MARK: - Animation Logic (remain the same)
-    private func toggleAnimation() { /* ... */ }
-    private func startAnimation() { /* ... */ }
-    private func animateStep() { /* ... */ }
-    private func stopAnimation() { /* ... */ }
-    private func resetAnimationState() { /* ... */ }
-}
+} // End of struct ReferenceView
