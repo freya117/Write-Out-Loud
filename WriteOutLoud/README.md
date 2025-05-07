@@ -4,7 +4,7 @@
 
 Write Out Loud is an iPadOS application designed to help users learn Chinese characters through a multimodal approach. It combines handwriting input (using Apple Pencil) with simultaneous speech input (vocalizing stroke names). The app provides feedback *after* the user completes writing the entire character, focusing on reinforcing stroke order memory and improving handwriting quality.
 
-The reference panel (left) shows a static image of the character, its pinyin/meaning, and an animated GIF demonstrating the correct stroke order. The writing panel (right) contains the drawing canvas where the user writes. During practice, a top bar displays the sequence of stroke names ("Number. Pinyin ChineseChar"). After completion, this bar shows vocalization feedback (correct/incorrect icons), and the user's drawn strokes on the canvas are colored based on accuracy (inaccurate strokes turn red). Tapping the canvas after feedback resets the attempt.
+The reference panel (left) shows a static image of the character, its pinyin/meaning, and an animated GIF demonstrating the correct stroke order. The writing panel (right) contains the drawing canvas where the user writes. During practice, a top bar displays the sequence of stroke names ("Number. Pinyin ChineseChar") and the current transcript. After completion, this bar shows vocalization feedback (correct/incorrect icons), and the user's drawn strokes on the canvas are colored based on accuracy (inaccurate strokes turn red). Tapping the canvas after feedback resets the attempt.
 
 This project is built using SwiftUI for the user interface and leverages Apple's PencilKit for handwriting input and the Speech framework for voice recognition.
 
@@ -24,7 +24,7 @@ WriteOutLoud/
 ├── Views/
 │   ├── MainView.swift            # Central coordinating view. Manages controllers, state (completion, interaction), delegates, and subviews. Creates final colored feedback drawing.
 │   ├── ReferenceView.swift       # Displays character info (static image, pinyin, meaning) and animated stroke order GIF (Left Panel).
-│   ├── WritingPaneView.swift     # Container for the writing area. Includes StrokeInfoBar, trace image guide, and the main canvas area. Handles tap-to-reset.
+│   ├── WritingPaneView.swift     # Container for the writing area. Includes StrokeInfoBar, trace image guide, transcript display, and the main canvas area. Handles tap-to-reset.
 │   ├── CanvasView.swift          # SwiftUI wrapper for the interactive PKCanvasView.
 │   ├── StaticCanvasView.swift    # Helper SwiftUI wrapper to display a static, non-interactive PKDrawing (used for final feedback).
 │   ├── StrokeInfoBar.swift       # (Implicitly part of WritingPaneView) Displays stroke sequence during practice and vocalization feedback after completion.
@@ -36,7 +36,7 @@ WriteOutLoud/
 │
 ├── Controllers/
 │   ├── StrokeInputController.swift # Manages PKCanvasView interaction, captures stroke points and timings. Tracks current expected stroke index.
-│   ├── SpeechRecognitionController.swift # Manages microphone input, audio processing, and speech transcription via SFSpeechRecognizer. Includes auto-stop timer.
+│   ├── SpeechRecognitionController.swift # Manages microphone input, audio processing, and speech recognition via SFSpeechRecognizer. Includes continuous recording, speech segmentation, and similar-sounding word matching.
 │   ├── ConcurrencyAnalyzer.swift # Analyzes stroke accuracy, speech correctness (name match), and timing overlap. Calculates scores and stores analysis history.
 │   └── FeedbackController.swift  # Simplified: Manages final score calculation state, plays feedback sounds. Does not directly drive UI views.
 │
@@ -44,6 +44,7 @@ WriteOutLoud/
 │   ├── StrokeAnalysis.swift      # Logic for detailed stroke accuracy calculation (shape, direction, position, proportion).
 │   ├── TimestampSynchronizer.swift # Helper functions for calculating overlap and lag between time intervals (stroke vs. speech).
 │   ├── PathUtils.swift           # Utility functions for CGPoint array processing (scaling, bounding box, etc.).
+│   ├── SpeechSynthesizer.swift   # Utility for text-to-speech functionality to pronounce stroke names.
 │   └── Extensions.swift          # Useful Swift extensions (safe subscripting, CGRect diagonal).
 │
 └── Other/
@@ -61,17 +62,18 @@ WriteOutLoud/
 * **Views:** Handle UI.
     * `MainView`: Orchestrates the flow, manages key state (`isCharacterPracticeComplete`, `isCanvasInteractionEnabled`, `finalDrawingWithFeedback`), handles delegate callbacks, creates the final colored drawing.
     * `ReferenceView`: Shows static info and GIF animation.
-    * `WritingPaneView`: Contains the writing area. Includes `StrokeInfoBar`, trace image, interactive canvas (during practice) or static canvas (for feedback). Handles tap-to-reset gesture. Controlled by `isInteractionEnabled`.
-    * `StrokeInfoBar`/`StrokeNamePill`: Display stroke sequence ("Number. Pinyin ChineseChar") or vocalization feedback icons. Font size increased.
+    * `WritingPaneView`: Contains the writing area. Includes `StrokeInfoBar`, trace image, real-time transcript display, interactive canvas (during practice) or static canvas (for feedback). Handles tap-to-reset gesture. Controlled by `isInteractionEnabled`.
+    * `StrokeInfoBar`/`StrokeNamePill`: Display stroke sequence ("Number. Pinyin ChineseChar"), real-time transcript, and vocalization feedback icons. Includes playable pronunciation buttons for each stroke.
     * `CanvasView`: Wrapper for the interactive `PKCanvasView`.
-    * `StaticCanvasView`: New helper to display the final, non-interactive colored drawing.
+    * `StaticCanvasView`: Helper to display the final, non-interactive colored drawing.
     * `FeedbackView`: Removed.
 * **Controllers:** Manage logic.
     * `StrokeInputController`: Handles drawing input via `PKCanvasViewDelegate`.
-    * `SpeechRecognitionController`: Handles voice input via `SFSpeechRecognizer`.
+    * `SpeechRecognitionController`: Handles voice input via `SFSpeechRecognizer`. Now features continuous recording during character practice, speech segmentation based on stroke timing, and similar-sounding word matching for Chinese pronunciations.
     * `ConcurrencyAnalyzer`: Performs analysis, stores results in `analysisHistory`.
     * `FeedbackController`: Simplified; calculates final scores, plays sounds.
 * **Utils:** Helper functions.
+    * `SpeechSynthesizer`: Provides text-to-speech functionality for pronouncing stroke names.
 * **Other:** App entry, Assets, optional JSON data, GIF/Sound file locations.
 
 ## 3. Logic and Pipeline
@@ -99,14 +101,14 @@ The application allows users to select a character and practice writing it strok
         * Clears previous temporary data (`currentStrokeAttemptData`).
         * Calls `speechRecognitionController.startRecording()`.
     * User draws the stroke and speaks the name.
-    * `StrokeInputController` captures points. `SpeechRecognitionController` processes audio.
+    * `StrokeInputController` captures points. `SpeechRecognitionController` processes audio continuously.
     * User finishes drawing the stroke.
     * `StrokeInputController` detects `canvasViewDidEndUsingTool`.
     * `MainView` (delegate `strokeEnded`):
         * Creates `currentStrokeAttemptData` with drawn points, timing, etc.
-        * Calls `speechRecognitionController.stopRecording()`.
+        * Calls `speechRecognitionController.processStrokeCompletion()` which segments speech based on stroke timing.
         * If speech wasn't detected, calls `processCompletedStrokeAttempt` immediately. Otherwise, waits for speech result.
-    * **Speech Result:** `SpeechRecognitionController` calls `speechTranscriptionFinalized` or `speechRecognitionErrorOccurred` delegate in `MainView`.
+    * **Speech Result:** `SpeechRecognitionController` calls `speechTranscriptionFinalized` delegate in `MainView`, providing matched speech segments for each stroke.
     * `MainView` (speech delegate methods): Updates `currentStrokeAttemptData` with speech results. Calls `processCompletedStrokeAttempt()`.
     * **Processing:** `MainView.processCompletedStrokeAttempt`: Retrieves `StrokeAttemptData`, calls `StrokeAnalysis.calculateAccuracy`, packages data into `StrokeAnalysisInput`, calls `concurrencyAnalyzer.analyzeStroke`.
     * **Concurrency Analysis:** `ConcurrencyAnalyzer.analyzeStroke`: Calculates scores, stores results in `analysisHistory`, calls `strokeAnalysisCompleted` delegate in `MainView`.
@@ -129,8 +131,8 @@ The application allows users to select a character and practice writing it strok
         * Iterates through `concurrencyAnalyzer.analysisHistory`. For each analyzed stroke:
             * Finds the corresponding stroke in the `PKDrawing`.
             * Creates a *new* `PKStroke` based on the drawn one.
-            * If accuracy < threshold (e.g., 70%), sets the new stroke's ink color to red. Otherwise, keeps the original color (or sets to green/blue).
-            * Appends the (potentially recolored) new stroke to a list.
+            * If accuracy < threshold (e.g., 70%), sets the new stroke's ink color to red. Otherwise, sets it to green for correct strokes.
+            * Appends the recolored new stroke to a list.
         * Appends any extra drawn strokes (beyond the expected count) with their original color.
         * Creates `finalFeedbackDrawing = PKDrawing(strokes: coloredStrokes)`.
         * Calls `feedbackController.calculateAndPresentOverallFeedback` (plays sound).
@@ -157,7 +159,7 @@ The application allows users to select a character and practice writing it strok
 * SwiftUI (UI Framework)
 * PencilKit (Handwriting Input & Canvas)
 * Speech (Speech Recognition)
-* AVFoundation (Audio Engine & Session Management for Speech, Sound Playback)
+* AVFoundation (Audio Engine & Session Management for Speech, Sound Playback, Text-to-Speech)
 * Combine (Used for `@Published` properties and reactive UI updates)
 * CoreGraphics (Used for CGPoint, CGRect etc.)
 * WebKit (Used by `GifImageView` to display animated GIFs)
@@ -179,13 +181,33 @@ The app requires user permission for Microphone Access and Speech Recognition. E
 
 ## 5. Important Notes for Collaborators
 
+* **Continuous Speech Recognition:** The app now maintains a continuous recording session during character practice, rather than stopping/starting between strokes. This provides a more natural experience and better handles speech that spans stroke boundaries.
+
+* **Speech Segmentation:** Speech is now segmented based on stroke timing. The `SpeechRecognitionController` intelligently assigns recognized speech to the appropriate strokes based on when each stroke was drawn.
+
+* **Similar-Sounding Word Recognition:** The app now recognizes similar-sounding Chinese words and treats them as correct matches. For example, saying "树" (shù) will be recognized as a match for "竖" (shù) since they have the same pronunciation.
+
+* **Real-time Transcript Display:** The transcript is now displayed in real-time below the instruction "Vocalize your stroke while writing" and remains visible throughout the practice session.
+
+* **Playable Stroke Names:** Both the speaker icon and play button in the `StrokeNamePill` component now allow users to hear the pronunciation of each stroke name at any time, including in the results page.
+
+* **Color Coding:** Correct stroke pronunciations are now displayed in green, incorrect in red, and undetected in gray (previously orange) in both the transcript history and stroke info bar.
+
 * **Delayed Feedback:** All visual feedback (stroke coloring, pronunciation icons) is intentionally delayed until the *entire* character writing attempt is complete. No per-stroke visual feedback is shown during writing.
+
 * **Final Drawing Coloring:** `MainView` is responsible for creating the final `PKDrawing` with colored strokes in the `overallAnalysisCompleted` delegate. It iterates through the *analysis history* and colors the corresponding strokes in a *copy* of the user's drawing.
+
 * **Stroke Info Bar:** This bar in `WritingPaneView` displays the stroke sequence ("Number. Pinyin ChineseChar") during practice and switches to vocalization icons (checkmark/cross/question mark) after completion. Font size has been increased.
+
 * **Interaction Lock & Reset:** The canvas is disabled (`allowsHitTesting(false)`) via `isCanvasInteractionEnabled` state in `MainView` immediately after the last stroke ends and during final feedback display. Tapping the writing pane *after* feedback is shown triggers a reset via the `onTapToWriteAgain` closure passed from `MainView`.
+
 * **Stroke Count Mismatch Handling:** The final feedback coloring logic in `MainView` now handles cases where the number of strokes drawn by the user doesn't exactly match the number of analyzed strokes, preventing crashes. Extra drawn strokes are shown with their original color.
+
 * **Data Source:** Ensure `characters.json` (or sample data) is correctly formatted and includes the `strokeCount` field. Verify asset names match those used in the data.
+
 * **Error Handling:** Basic error handling logs messages. Speech recognition errors (like no speech detected) are handled gracefully by marking the attempt as failed/unavailable. Consider adding more user-facing alerts for critical issues (e.g., permission denial, data loading failures).
+
 * **SwiftUI State Management:** The app uses `@StateObject`, `@EnvironmentObject`, `@State`, and delegate patterns for state management and communication. Pay attention to main thread updates (`DispatchQueue.main.async`) when updating UI-related state from background threads or delegate callbacks.
+
 * **Asset Inclusion:** Double-check that all required images (`.png`/`.jpg` in Assets), GIFs (`.gif` in Bundle), and Sounds (`.mp3` in Bundle) are correctly added to the Xcode project and included in the Target Membership for the main application target.
 
