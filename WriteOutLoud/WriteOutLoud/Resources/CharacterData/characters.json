@@ -4,7 +4,7 @@
     "character": "口",
     "pinyin": "kǒu",
     "meaning": "mouth",
-    "strokeCount": 3, // Added
+    "strokeCount": 3,
     "normalImageName": "kou_normal",
     "traceImageName": "kou_trace",
     "animationImageName": "kou_order",
@@ -43,7 +43,7 @@
     "character": "人",
     "pinyin": "rén",
     "meaning": "person",
-    "strokeCount": 2, // Added
+    "strokeCount": 2,
     "normalImageName": "ren_normal",
     "traceImageName": "ren_trace",
     "animationImageName": "ren_order",
@@ -73,7 +73,7 @@
     "character": "日",
     "pinyin": "rì",
     "meaning": "sun/day",
-    "strokeCount": 4, // Added
+    "strokeCount": 4,
     "normalImageName": "ri_normal",
     "traceImageName": "ri_trace",
     "animationImageName": "ri_order",
