@@ -14,6 +14,8 @@ struct StrokeAnalysis {
     ///   - expectedStroke: The Stroke object containing the expected path data
     /// - Returns: Accuracy score between 0 and 100
     static func calculateAccuracy(drawnPoints: [CGPoint], expectedStroke: Stroke) -> Double {
+        print("\n===== STROKE ANALYSIS: \(expectedStroke.name) (Type: \(expectedStroke.type)) =====")
+        
         // Ensure we have drawn points to analyze
         guard !drawnPoints.isEmpty else {
             print("No drawn points to analyze")
@@ -34,6 +36,7 @@ struct StrokeAnalysis {
              return 10.0 // Return low score
         }
 
+        print("Drawn points: \(drawnPoints.count), Expected points: \(expectedPathPoints.count)")
 
         // 1. Normalize/scale both points to same coordinate space (0.0-1.0)
         let normalizedDrawnPoints = normalizePoints(drawnPoints)
@@ -57,12 +60,13 @@ struct StrokeAnalysis {
             expected: normalizedExpectedPoints
         )
 
-        // 4. Calculate start/end position accuracy
-        let positionAccuracy = calculatePositionAccuracy(
+        // 4. Calculate start/end position accuracy with increased tolerance for simple strokes
+        var positionAccuracy = calculatePositionAccuracy(
             drawnStart: normalizedDrawnPoints.first!, // Safe to force unwrap after checks
             drawnEnd: normalizedDrawnPoints.last!,   // Safe to force unwrap after checks
             expectedStart: normalizedExpectedPoints.first!, // Safe to force unwrap after checks
-            expectedEnd: normalizedExpectedPoints.last!     // Safe to force unwrap after checks
+            expectedEnd: normalizedExpectedPoints.last!,    // Safe to force unwrap after checks
+            strokeType: expectedStroke.type
         )
 
         // 5. Calculate stroke proportion similarity (aspect ratio comparison)
@@ -72,16 +76,48 @@ struct StrokeAnalysis {
         )
 
         // 6. Calculate final weighted score
-        // Weights should sum to 1.0
+        // Adjust weights based on stroke type
+        var shapeWeight = 0.35
+        var directionWeight = 0.3 
+        var positionWeight = 0.25
+        var proportionWeight = 0.1
+        
+        // For basic strokes, reduce dependency on position
+        if expectedStroke.type == .heng || expectedStroke.type == .shu {
+            print("Using adjusted weights for basic stroke: \(expectedStroke.type)")
+            shapeWeight = 0.4      // Increase shape importance 
+            directionWeight = 0.35  // Increase direction importance
+            positionWeight = 0.15   // Reduce position weight
+            proportionWeight = 0.1  // Keep proportion the same
+            
+            // Apply a position boost for basic strokes to avoid low scores
+            let positionBoost = max(0.0, 0.5 - positionAccuracy) * 0.5 // Add up to 0.25 to position score
+            if positionBoost > 0 {
+                print("Applied position boost of +\(String(format: "%.2f", positionBoost)) for basic stroke")
+                // Apply the boost to position accuracy
+                let boostedPositionAccuracy = min(1.0, positionAccuracy + positionBoost)
+                print("Position accuracy boosted from \(String(format: "%.2f", positionAccuracy)) to \(String(format: "%.2f", boostedPositionAccuracy))")
+                // Replace position accuracy with boosted value
+                positionAccuracy = Double(boostedPositionAccuracy)
+            }
+        }
+        
         let weightedScore =
-            (shapeSimilarity * 0.4) +      // Shape is most important
-            (directionSimilarity * 0.3) + // Direction is next important
-            (positionAccuracy * 0.2) +    // Position accuracy
-            (proportionSimilarity * 0.1)  // Proportion least important
+            (shapeSimilarity * shapeWeight) +
+            (directionSimilarity * directionWeight) +
+            (positionAccuracy * positionWeight) +
+            (proportionSimilarity * proportionWeight)
 
         // Return score in 0-100 range, clamped
         let finalScore = max(0.0, min(1.0, weightedScore)) // Clamp score between 0 and 1 first
-        print("Stroke Analysis Score Breakdown: Shape=\(String(format: "%.2f", shapeSimilarity)), Dir=\(String(format: "%.2f", directionSimilarity)), Pos=\(String(format: "%.2f", positionAccuracy)), Prop=\(String(format: "%.2f", proportionSimilarity)) -> Weighted=\(String(format: "%.2f", finalScore))")
+        print("Final Score Breakdown:")
+        print("  Shape (\(String(format: "%.2f", shapeWeight * 100))%): \(String(format: "%.2f", shapeSimilarity))")
+        print("  Direction (\(String(format: "%.2f", directionWeight * 100))%): \(String(format: "%.2f", directionSimilarity))")
+        print("  Position (\(String(format: "%.2f", positionWeight * 100))%): \(String(format: "%.2f", positionAccuracy))")
+        print("  Proportion (\(String(format: "%.2f", proportionWeight * 100))%): \(String(format: "%.2f", proportionSimilarity))")
+        print("  Weighted Score = \(String(format: "%.2f", finalScore))")
+        print("  FINAL PERCENTAGE = \(String(format: "%.1f", finalScore * 100))")
+        print("===== END ANALYSIS =====\n")
         return finalScore * 100.0
     }
 
@@ -126,6 +162,7 @@ struct StrokeAnalysis {
     }
 
     /// Calculate shape similarity using average distance between resampled paths
+    /// with tolerance for stroke width
     private static func calculateShapeSimilarity(drawn: [CGPoint], expected: [CGPoint]) -> Double {
         // Resample both paths to have the same number of points
         let sampleCount = 50 // Number of points to resample to
@@ -138,12 +175,26 @@ struct StrokeAnalysis {
             return 0.0 // Low score if resampling fails
         }
 
-        // Calculate mean distance between corresponding points
+        // Calculate minimum distance from each drawn point to any expected point
+        // This is more tolerant of slight deviations than direct point-to-point comparison
         var totalDistance: CGFloat = 0
         for i in 0..<sampleCount {
             let drawnPoint = resampledDrawn[i]
-            let expectedPoint = resampledExpected[i]
-            totalDistance += distance(drawnPoint, expectedPoint) // Use helper
+            
+            // Find closest expected point to this drawn point
+            var minDistance = CGFloat.greatestFiniteMagnitude
+            // Check nearby points (within a window) to account for slight shifts
+            let windowSize = 5 // Check 5 points before and after
+            let rangeStart = max(0, i - windowSize)
+            let rangeEnd = min(sampleCount - 1, i + windowSize)
+            
+            for j in rangeStart...rangeEnd {
+                let expectedPoint = resampledExpected[j]
+                let dist = distance(drawnPoint, expectedPoint)
+                minDistance = min(minDistance, dist)
+            }
+            
+            totalDistance += minDistance
         }
 
         let averageDistance = totalDistance / CGFloat(sampleCount)
@@ -152,7 +203,8 @@ struct StrokeAnalysis {
         // Maximum possible distance in normalized space is sqrt(2) (~1.414)
         let maxDistance: CGFloat = sqrt(2.0)
         // Score is 1 if distance is 0, decreases linearly to 0 as distance approaches maxDistance
-        let similarity = 1.0 - (averageDistance / maxDistance)
+        // Add tolerance factor (0.8) to be more lenient
+        let similarity = 1.0 - (averageDistance / (maxDistance * 0.8))
 
         return min(1.0, max(0.0, Double(similarity))) // Clamp between 0 and 1
     }
@@ -193,26 +245,73 @@ struct StrokeAnalysis {
         }
     }
 
-    /// Calculate accuracy of start and end positions
+    /// Calculate accuracy of start and end positions with adjusted tolerance based on stroke type
     private static func calculatePositionAccuracy(
         drawnStart: CGPoint, drawnEnd: CGPoint,
-        expectedStart: CGPoint, expectedEnd: CGPoint
+        expectedStart: CGPoint, expectedEnd: CGPoint,
+        strokeType: StrokeType
     ) -> Double {
         // Calculate distances between start points and end points in normalized space
         let startDistance = distance(drawnStart, expectedStart)
         let endDistance = distance(drawnEnd, expectedEnd)
+        
+        // Print position debugging info
+        print("Position Analysis Debug - Type: \(strokeType)")
+        print("  Expected Start: (\(String(format: "%.2f", expectedStart.x)), \(String(format: "%.2f", expectedStart.y)))")
+        print("  Drawn Start:    (\(String(format: "%.2f", drawnStart.x)), \(String(format: "%.2f", drawnStart.y)))")
+        print("  Start Distance: \(String(format: "%.2f", startDistance))")
+        print("  Expected End:   (\(String(format: "%.2f", expectedEnd.x)), \(String(format: "%.2f", expectedEnd.y)))")
+        print("  Drawn End:      (\(String(format: "%.2f", drawnEnd.x)), \(String(format: "%.2f", drawnEnd.y)))")
+        print("  End Distance:   \(String(format: "%.2f", endDistance))")
 
-        // Convert distances to accuracy scores (0-1)
-        // Maximum possible distance in normalized space is sqrt(2)
-        let maxDistance: CGFloat = sqrt(2.0)
-        // Score decreases as distance increases. Maybe use an exponential decay?
-        // Or simpler: linear decrease, score is 0 if distance > threshold (e.g., 0.25)
-        let threshold: CGFloat = 0.25
-        let startAccuracy = max(0.0, 1.0 - (startDistance / threshold))
-        let endAccuracy = max(0.0, 1.0 - (endDistance / threshold))
+        // Adjust threshold based on stroke type
+        // Simple strokes like horizontal/vertical lines should have more tolerance
+        var threshold: CGFloat = 0.25 // Default threshold
+        
+        // Increase tolerance for basic strokes that are more common and simpler
+        switch strokeType {
+        case .heng, .shu, .pie, .na:
+            threshold = 0.5 // Much more tolerance for basic strokes (horizontal, vertical, etc.)
+        case .hengzhe, .shuzhe:
+            threshold = 0.4 // More tolerance for compound strokes
+        default:
+            threshold = 0.3 // Default for other strokes
+        }
+        
+        // For very simple horizontal and vertical strokes, check positional alignment on the relevant axis only
+        var startAccuracy: CGFloat = 0.0
+        var endAccuracy: CGFloat = 0.0
+        
+        if strokeType == .heng {
+            // For horizontal strokes, care more about y-position than x-position
+            let startYDistance = abs(drawnStart.y - expectedStart.y)
+            let endYDistance = abs(drawnEnd.y - expectedEnd.y)
+            startAccuracy = max(0.0, 1.0 - (startYDistance / threshold))
+            endAccuracy = max(0.0, 1.0 - (endYDistance / threshold))
+            print("  Using horizontal stroke special handling")
+            print("  Start Y-Distance: \(String(format: "%.2f", startYDistance))")
+            print("  End Y-Distance: \(String(format: "%.2f", endYDistance))")
+        } else if strokeType == .shu {
+            // For vertical strokes, care more about x-position than y-position
+            let startXDistance = abs(drawnStart.x - expectedStart.x)
+            let endXDistance = abs(drawnEnd.x - expectedEnd.x)
+            startAccuracy = max(0.0, 1.0 - (startXDistance / threshold))
+            endAccuracy = max(0.0, 1.0 - (endXDistance / threshold))
+            print("  Using vertical stroke special handling")
+            print("  Start X-Distance: \(String(format: "%.2f", startXDistance))")
+            print("  End X-Distance: \(String(format: "%.2f", endXDistance))")
+        } else {
+            // For other strokes, use normal Euclidean distance
+            startAccuracy = max(0.0, 1.0 - (startDistance / threshold))
+            endAccuracy = max(0.0, 1.0 - (endDistance / threshold))
+        }
 
         // Average the two accuracy scores
         let averageAccuracy = (startAccuracy + endAccuracy) / 2.0
+        print("  Threshold: \(String(format: "%.2f", threshold))")
+        print("  Start Accuracy: \(String(format: "%.2f", startAccuracy))")
+        print("  End Accuracy: \(String(format: "%.2f", endAccuracy))")
+        print("  Average Position Accuracy: \(String(format: "%.2f", averageAccuracy))")
 
         return min(1.0, max(0.0, Double(averageAccuracy))) // Clamp 0-1
     }
