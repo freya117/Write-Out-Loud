@@ -167,7 +167,7 @@ class ConcurrencyAnalyzer: ObservableObject {
         return feedback
     }
 
-    // calculateFinalCharacterScore (MODIFIED to validate stroke count)
+    // calculateFinalCharacterScore (MODIFIED to handle partial completion)
     func calculateFinalCharacterScore() {
         guard let character = character else {
             print("Error: No character set for final score calculation.")
@@ -179,6 +179,7 @@ class ConcurrencyAnalyzer: ObservableObject {
             }
             return
         }
+        
         guard !currentStrokeTimings.isEmpty else {
             print("No stroke data to calculate final score.")
             DispatchQueue.main.async { [weak self] in
@@ -189,102 +190,112 @@ class ConcurrencyAnalyzer: ObservableObject {
             }
             return
         }
-        // CHANGED: Validate that all strokes have been analyzed
-        guard currentStrokeTimings.count == character.strokeCount else {
-            print("Error: Incomplete strokes analyzed (\(currentStrokeTimings.count)/\(character.strokeCount)). Not calculating final score.")
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.currentOverallScore = 0
-                self.currentScoreBreakdown = ScoreBreakdown()
-                self.delegate?.overallAnalysisCompleted(
-                    overallScore: 0,
-                    breakdown: self.currentScoreBreakdown,
-                    feedback: "Incomplete strokes (\(self.currentStrokeTimings.count)/\(character.strokeCount)). Please complete all strokes."
-                )
-            }
-            return
+        
+        // Process whatever strokes we have (even if incomplete)
+        let completedCount = currentStrokeTimings.count
+        let totalCount = character.strokeCount
+        
+        if completedCount < totalCount {
+            print("Note: Partial character completion (\(completedCount)/\(totalCount) strokes). Still calculating score for completed strokes.")
         }
-
-        let numStrokes = Double(currentStrokeTimings.count)
-        var totalStrokeAccuracy: Double = 0
-        var totalSpeechCorrectnessScore: Double = 0
-        var totalConcurrencyScore: Double = 0
-        var speechAttemptCount: Int = 0
-
+        
+        // Calculate score breakdown based on completed strokes
+        var breakdown = ScoreBreakdown()
+        
+        // 1. Average stroke accuracy
+        var totalAccuracy: Double = 0
         for timing in currentStrokeTimings {
-            totalStrokeAccuracy += timing.strokeAccuracy
-            totalSpeechCorrectnessScore += (timing.transcriptionMatched == true) ? 100.0 : 0.0
-            if timing.speechStartTime != nil {
-                totalConcurrencyScore += timing.concurrencyScore
-                speechAttemptCount += 1
+            totalAccuracy += timing.strokeAccuracy
+        }
+        breakdown.strokeAccuracy = totalAccuracy / Double(completedCount)
+        
+        // 2. Speech correctness (percentage of strokes with correct speech)
+        var correctSpeechCount = 0
+        for timing in currentStrokeTimings {
+            if timing.transcriptionMatched == true {
+                correctSpeechCount += 1
             }
         }
-
-        let avgStrokeAccuracy = totalStrokeAccuracy / numStrokes
-        let avgSpeechCorrectness = totalSpeechCorrectnessScore / numStrokes
-        let avgConcurrencyScore = speechAttemptCount > 0 ? (totalConcurrencyScore / Double(speechAttemptCount)) : 0.0
-
-        let breakdown = ScoreBreakdown(
-            strokeAccuracy: avgStrokeAccuracy,
-            speechCorrectness: avgSpeechCorrectness,
-            concurrencyScore: avgConcurrencyScore
+        breakdown.speechCorrectness = completedCount > 0 ? (Double(correctSpeechCount) / Double(completedCount)) * 100.0 : 0
+        
+        // 3. Average concurrency score
+        var totalConcurrency: Double = 0
+        var concurrencyDataCount = 0
+        for timing in currentStrokeTimings {
+            if timing.speechStartTime != nil {
+                totalConcurrency += timing.concurrencyScore
+                concurrencyDataCount += 1
+            }
+        }
+        breakdown.concurrencyScore = concurrencyDataCount > 0 ? totalConcurrency / Double(concurrencyDataCount) : 0
+        
+        // Calculate weighted overall score (give more weight to stroke accuracy)
+        let overallScore = (
+            breakdown.strokeAccuracy * 0.5 +
+            breakdown.speechCorrectness * 0.3 +
+            breakdown.concurrencyScore * 0.2
         )
-
-        let overallScore = (avgStrokeAccuracy * 0.5) + (avgSpeechCorrectness * 0.3) + (avgConcurrencyScore * 0.2)
-        let finalOverallScore = max(0.0, min(100.0, overallScore))
-
+        
+        // Generate overall feedback message
+        let completionRatio = Double(completedCount) / Double(totalCount)
+        let feedbackMessage = generateOverallFeedback(
+            score: overallScore, 
+            breakdown: breakdown, 
+            completionRatio: completionRatio
+        )
+        
+        // Update published properties and notify delegate
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.currentOverallScore = overallScore
             self.currentScoreBreakdown = breakdown
-            self.currentOverallScore = finalOverallScore
-        }
-
-        print("Final Character Score Calculation for '\(character.character)':")
-        print("  Avg Accuracy: \(String(format: "%.1f", breakdown.strokeAccuracy))")
-        print("  Avg Speech Correctness: \(String(format: "%.1f", breakdown.speechCorrectness))")
-        print("  Avg Concurrency (on \(speechAttemptCount) attempts): \(String(format: "%.1f", breakdown.concurrencyScore))")
-        print("  Overall Score: \(String(format: "%.1f", finalOverallScore))")
-
-        let overallFeedback = generateOverallFeedbackMessage(score: finalOverallScore, breakdown: breakdown, speechAttempts: speechAttemptCount)
-
-        DispatchQueue.main.async { [weak self] in
-            self?.delegate?.overallAnalysisCompleted(
-                overallScore: finalOverallScore,
+            self.delegate?.overallAnalysisCompleted(
+                overallScore: overallScore,
                 breakdown: breakdown,
-                feedback: overallFeedback
+                feedback: feedbackMessage
             )
         }
     }
 
-    // generateOverallFeedbackMessage (unchanged)
-    private func generateOverallFeedbackMessage(score: Double, breakdown: ScoreBreakdown, speechAttempts: Int) -> String {
-        var messages: [String] = []
-
-        // Stroke accuracy feedback
-        if breakdown.strokeAccuracy >= 90 { messages.append("Excellent stroke accuracy!") }
-        else if breakdown.strokeAccuracy >= 70 { messages.append("Good overall stroke shapes.") }
-        else { messages.append("Focus on improving stroke shapes.") }
-
-        // Speech feedback
-        if breakdown.speechCorrectness >= 90 { messages.append("Perfect stroke naming!") }
-        else if breakdown.speechCorrectness >= 60 { messages.append("You named most strokes correctly.") }
-        else { messages.append("Review the stroke names carefully.") }
-
-        // Concurrency feedback
-        if speechAttempts > 0 && breakdown.speechCorrectness > 30 {
-            if breakdown.concurrencyScore >= 80 { messages.append("Great job syncing speech and writing!") }
-            else if breakdown.concurrencyScore >= 50 { messages.append("Work on your timing synchronization.") }
-            else { messages.append("Try saying the name *while* drawing.") }
-        } else if speechAttempts > 0 {
-            messages.append("Focus on saying the correct names first, then work on timing.")
+    // Generate overall feedback message based on score and completion
+    private func generateOverallFeedback(score: Double, breakdown: ScoreBreakdown, completionRatio: Double) -> String {
+        var feedback = ""
+        
+        // Add completion status
+        if completionRatio < 1.0 {
+            feedback += "You completed \(Int(completionRatio * 100))% of the character. "
+            
+            if completionRatio < 0.5 {
+                feedback += "Try to complete the full character next time. "
+            }
         }
-
-        // Overall performance message
-        if score >= 90 { messages.append("Outstanding work!") }
-        else if score >= 75 { messages.append("Very good! Keep practicing.") }
-        else if score >= 60 { messages.append("Good effort! Practice makes perfect.") }
-        else { messages.append("Keep practicing to improve.") }
-
-        return messages.joined(separator: " ")
+        
+        // Add score-based feedback
+        if score >= 90 {
+            feedback += "Excellent work! "
+        } else if score >= 75 {
+            feedback += "Very good job! "
+        } else if score >= 60 {
+            feedback += "Good effort! "
+        } else if score >= 40 {
+            feedback += "Keep practicing. "
+        } else {
+            feedback += "Let's try again. "
+        }
+        
+        // Add specific feedback
+        if breakdown.strokeAccuracy < 60 {
+            feedback += "Focus on stroke shape accuracy. "
+        }
+        
+        if breakdown.speechCorrectness < 60 {
+            feedback += "Remember to say the correct stroke names. "
+        }
+        
+        if breakdown.concurrencyScore < 40 {
+            feedback += "Try to speak while writing. "
+        }
+        
+        return feedback
     }
 }
