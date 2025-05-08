@@ -130,12 +130,11 @@ struct StrokeInfoBar: View {
     
     var body: some View { 
         VStack(alignment: .leading, spacing: 5) {
-            Text("Vocalize your stroke while writing:").font(.subheadline).fontWeight(.bold).foregroundColor(.black).padding(.bottom, 4)
+            Text("Vocalize your stroke while writing:").font(.subheadline).fontWeight(.bold).foregroundColor(.primary).padding(.bottom, 4)
             
-            // Add transcript immediately after the instruction
-            if showRealtimeTranscript {
-                // Transcript container with fixed height
-                VStack(spacing: 0) {
+            // Transcript container - always present to maintain stable layout
+            VStack(spacing: 0) {
+                if showRealtimeTranscript {
                     // Current transcription (listening mode)
                     if !isPracticeComplete && currentStrokeIndex < (character?.strokeCount ?? 0) {
                         realtimeTranscriptArea()
@@ -150,14 +149,18 @@ struct StrokeInfoBar: View {
                     if (isPracticeComplete || currentStrokeIndex >= (character?.strokeCount ?? 0)) && analysisHistory.isEmpty {
                         emptyTranscriptPlaceholder()
                     }
+                } else {
+                    // Show empty space when transcript is toggled off
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(height: transcriptAreaHeight) // Fixed height container
-                .padding(.vertical, 5)
-                .padding(.horizontal, 5)
-                .background(Color(UIColor.systemGray6))
-                .cornerRadius(8)
-                .padding(.bottom, 5)
             }
+            .frame(height: transcriptAreaHeight) // Fixed height container
+            .padding(.vertical, 5)
+            .padding(.horizontal, 5)
+            .background(Color(UIColor.systemGray6))
+            .cornerRadius(8)
+            .padding(.bottom, 5)
             
             Group { 
                 if isPracticeComplete { 
@@ -265,14 +268,15 @@ struct StrokeInfoBar: View {
                 )
             }
             
-            // Be more explicit about determining the color based on match status
+            // Color based ONLY on speech recognition result (transcriptionMatched)
+            // This ensures transcript colors match the pronunciation feedback, not stroke accuracy
             let color: Color
             if latestEntry.transcriptionMatched == true {
                 color = Color.green // Use explicit Color.green to ensure consistency
             } else if latestEntry.transcriptionMatched == false {
                 color = Color.red // Use explicit Color.red to ensure consistency
             } else {
-                color = Color.gray // Use gray instead of orange for transcripts with nil match status
+                color = Color.gray // Use gray for transcripts with nil match status
             }
             
             // Make transcript display more user-friendly
@@ -316,14 +320,13 @@ struct StrokeInfoBar: View {
                             .filter { $0.strokeIndex == index }
                             .max(by: { $0.strokeEndTime < $1.strokeEndTime })
                         
-                        // Debug the match status
+                        // Debug the match status and accuracy
                         if let data = analysisData {
-                            let _ = print("Stroke \(index+1) match status: \(String(describing: data.transcriptionMatched))")
+                            let _ = print("Stroke \(index+1) match status: \(String(describing: data.transcriptionMatched)), accuracy: \(String(format: "%.1f", data.strokeAccuracy))")
                         }
                         
                         // Default to true if we have a transcript but no match status
-                        // This ensures we show green for strokes that were recognized correctly
-                        let wasCorrect: Bool? = if let data = analysisData {
+                        let speechWasCorrect: Bool? = if let data = analysisData {
                             // If we have a definitive false, use it
                             if data.transcriptionMatched == false {
                                 false
@@ -338,14 +341,23 @@ struct StrokeInfoBar: View {
                             nil
                         }
                         
-                        // Pass the definitive match status to the pill
+                        // Determine if the stroke was drawn accurately based on strokeAccuracy
+                        let strokeIsAccurate: Bool? = if let data = analysisData {
+                            // 60.0 is the same threshold used in MainView for coloring
+                            data.strokeAccuracy >= 60.0
+                        } else {
+                            nil
+                        }
+                        
+                        // Pass both speech correctness and stroke accuracy to the pill
                         StrokeNamePill(
                             number: index + 1,
                             pinyin: strokes[index].type.basePinyinName,
                             chineseName: strokes[index].name,
                             isCurrent: false,
                             isComplete: true,
-                            wasCorrect: wasCorrect
+                            speechWasCorrect: speechWasCorrect,
+                            strokeIsAccurate: strokeIsAccurate
                         )
                     }
                 } else {
@@ -356,14 +368,15 @@ struct StrokeInfoBar: View {
     }
 }
 
-// MARK: - StrokeNamePill (Unchanged)
+// MARK: - StrokeNamePill
 struct StrokeNamePill: View {
     let number: Int
     let pinyin: String
     let chineseName: String
     let isCurrent: Bool
     let isComplete: Bool
-    var wasCorrect: Bool? = nil
+    var speechWasCorrect: Bool? = nil
+    var strokeIsAccurate: Bool? = nil
     private let textFontSize: Font = .headline
     
     var body: some View {
@@ -373,13 +386,16 @@ struct StrokeNamePill: View {
                 .font(textFontSize.weight(.regular))
                 .foregroundColor(.secondary)
                 .onTapGesture {
-                    SpeechSynthesizer.speak(text: chineseName, language: "zh-CN")
+                    // Add a small delay to ensure audio session is ready
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        SpeechSynthesizer.speak(text: chineseName, language: "zh-CN")
+                    }
                 }
             
-            // Status icon for completed strokes
+            // Status icon for completed strokes - now shows SPEECH status
             if isComplete {
-                Image(systemName: iconName)
-                    .foregroundColor(iconColor)
+                Image(systemName: speechIconName)
+                    .foregroundColor(speechIconColor)
                     .font(textFontSize.weight(.semibold))
             }
             
@@ -387,35 +403,20 @@ struct StrokeNamePill: View {
             Text("\(number).")
                 .font(textFontSize)
                 .fontWeight(.medium)
-                .foregroundColor(isCurrent && !isComplete ? .blue : textColor)
+                .foregroundColor(isCurrent && !isComplete ? .blue : .primary)
             
-            // Chinese name
+            // Chinese name with color based on speech correctness
             Text(chineseName)
                 .font(textFontSize)
-                .foregroundColor(textColor)
+                .foregroundColor(isComplete ? speechTextColor : .primary)
             
-            // Pinyin pronunciation
+            // Pinyin pronunciation with color based on speech correctness
             Text(pinyin)
                 .font(textFontSize)
-                .foregroundColor(textColor)
+                .foregroundColor(isComplete ? speechTextColor : .primary)
                 .lineLimit(1)
             
             Spacer()
-            
-            // Play button for completed strokes
-            if isComplete {
-                Button {
-                    // Actually play the stroke name using SpeechSynthesizer
-                    SpeechSynthesizer.speak(text: chineseName, language: "zh-CN")
-                    print("Playing stroke name: \(chineseName)")
-                } label: {
-                    Image(systemName: "play.circle")
-                        .font(textFontSize)
-                        .foregroundColor(.accentColor) // Always show as enabled
-                }
-                .buttonStyle(.plain)
-                // Remove the disabled state to ensure it's always clickable
-            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -428,16 +429,13 @@ struct StrokeNamePill: View {
         .animation(.easeInOut(duration: 0.2), value: isComplete)
     }
     
-    private var textColor: Color {
-        if isComplete {
-            switch wasCorrect {
-            case true: return Color.green
-            case false: return Color.red
-            case nil: return Color.gray
-            default: return Color.gray
-            }
-        } else {
-            return .primary
+    // Speech text color (used for Chinese name and pinyin when complete)
+    private var speechTextColor: Color {
+        switch speechWasCorrect {
+        case true: return Color.green
+        case false: return Color.red
+        case nil: return Color.gray
+        default: return Color.gray
         }
     }
     
@@ -449,9 +447,10 @@ struct StrokeNamePill: View {
         }
     }
     
-    private var iconName: String {
+    // Speech icon name (checkmark/x/question for speech correctness)
+    private var speechIconName: String {
         guard isComplete else { return "" }
-        switch wasCorrect {
+        switch speechWasCorrect {
         case true: return "checkmark.circle.fill"
         case false: return "xmark.circle.fill"
         case nil: return "questionmark.circle.fill"
@@ -459,9 +458,10 @@ struct StrokeNamePill: View {
         }
     }
     
-    private var iconColor: Color {
+    // Speech icon color
+    private var speechIconColor: Color {
         guard isComplete else { return .clear }
-        switch wasCorrect {
+        switch speechWasCorrect {
         case true: return Color.green
         case false: return Color.red
         case nil: return Color.gray

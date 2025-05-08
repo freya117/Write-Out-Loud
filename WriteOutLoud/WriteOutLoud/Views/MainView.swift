@@ -84,8 +84,9 @@ final class DelegateCoordinator: NSObject, ObservableObject, StrokeInputDelegate
         
         // Don't call stopRecording again since processStrokeCompletion handles it
         
-        // Wait a bit longer before proceeding with analysis to ensure speech processing completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+        // Reduced delay to make the UI more responsive for fast writing
+        // Changed from 0.6s to 0.3s to balance between speech processing and UI responsiveness
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self = self else { return }
             
             // Check if we have speech data yet
@@ -232,7 +233,7 @@ final class DelegateCoordinator: NSObject, ObservableObject, StrokeInputDelegate
         }
 
         var strokesWithFeedback: [PKStroke] = []
-        let accuracyThreshold = 60.0
+        let accuracyThreshold = 60.0  // Accuracy threshold for stroke color
         let inaccurateColor = UIColor.red
         let accurateColor = UIColor.systemGreen
 
@@ -241,10 +242,11 @@ final class DelegateCoordinator: NSObject, ObservableObject, StrokeInputDelegate
             var newStroke = drawnStroke // Copy the stroke
             // Find analysis data for this stroke index, if it exists
             if let analysisData = history.first(where: { $0.strokeIndex == index }) {
-                // Color based on accuracy if analysis exists
-                let targetColor = analysisData.strokeAccuracy < accuracyThreshold ? inaccurateColor : accurateColor
+                // Color based ONLY on stroke accuracy, independent of speech/pronunciation results
+                let strokeAccuracy = analysisData.strokeAccuracy
+                let targetColor = strokeAccuracy < accuracyThreshold ? inaccurateColor : accurateColor
                 newStroke.ink = PKInk(newStroke.ink.inkType, color: targetColor)
-                print("  Coordinator: Coloring stroke \(index) \(analysisData.strokeAccuracy < accuracyThreshold ? "RED" : "GREEN")")
+                print("  Coordinator: Coloring stroke \(index) \(strokeAccuracy < accuracyThreshold ? "RED" : "GREEN") (accuracy: \(String(format: "%.1f", strokeAccuracy)))")
             } else {
                 // Keep original color if no analysis data (e.g., extra strokes)
                 print("  Coordinator: Keeping original color for stroke \(index) (no analysis data).")
@@ -296,7 +298,19 @@ struct MainView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                transcriptToggle().padding(.horizontal).padding(.top, 8).padding(.bottom, 4)
+                HStack {
+                    Spacer()
+                    HStack {
+                        Text("Show Real-time Transcript")
+                            .font(.subheadline)
+                        
+                        Toggle("", isOn: $showRealtimeTranscript)
+                            .labelsHidden()
+                    }
+                    .tint(.blue)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal)
+                }
                 HStack(spacing: 0) {
                     referencePanel(geometry: geometry)
                     Divider()
@@ -313,9 +327,14 @@ struct MainView: View {
     }
 
     // MARK: - Subviews (Unchanged)
-    @ViewBuilder private func transcriptToggle() -> some View { Toggle("Show Real-time Transcript", isOn: $showRealtimeTranscript).padding(.vertical, 4).tint(.blue) }
-    @ViewBuilder private func referencePanel(geometry: GeometryProxy) -> some View { /* ... as before ... */
+    @ViewBuilder private func referencePanel(geometry: GeometryProxy) -> some View {
        VStack(spacing: 0) {
+             Text("Characters Selection")
+                .font(.headline)
+                .padding(.vertical, 8)
+                .padding(.horizontal)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(UIColor.secondarySystemBackground))
              CharacterSelectionView(selectedIndex: $selectedCharacterIndex, characters: characterDataManager.characters, onSelect: { index in self.selectedCharacterIndex = index; if index >= 0 && index < self.characterDataManager.characters.count { self.characterDataManager.selectCharacter(withId: self.characterDataManager.characters[index].id) } }).padding(.vertical).background(Color(UIColor.secondarySystemBackground)).frame(minHeight: 80); Divider()
              GeometryReader { refGeo in ReferenceView(character: characterDataManager.currentCharacter).frame(width: refGeo.size.width, height: refGeo.size.height) }.frame(maxWidth: .infinity, maxHeight: .infinity)
          }.frame(width: geometry.size.width * 0.40).background(Color(UIColor.systemBackground))
@@ -407,30 +426,36 @@ struct MainView: View {
         
         print("MainView: Processing completed stroke attempt for index \(attemptData.strokeIndex)")
         
-        // Calculate stroke accuracy
-        let accuracy = StrokeAnalysis.calculateAccuracy(
-            drawnPoints: attemptData.drawnPoints, 
-            expectedStroke: attemptData.expectedStroke
-        )
-        
-        // Create analysis input with all data
-        let input = StrokeAnalysisInput(
-            strokeIndex: attemptData.strokeIndex, 
-            expectedStroke: attemptData.expectedStroke, 
-            strokeStartTime: attemptData.strokeStartTime, 
-            strokeEndTime: attemptData.strokeEndTime,
-            strokeAccuracy: accuracy, 
-            speechStartTime: attemptData.speechStartTime, 
-            speechEndTime: attemptData.speechEndTime, 
-            finalTranscription: attemptData.finalTranscription,
-            transcriptionMatched: attemptData.transcriptionMatched, 
-            speechConfidence: attemptData.speechConfidence
-        )
-        
-        // Send to analyzer for processing
-        concurrencyAnalyzer.analyzeStroke(input: input)
-        
-        print("MainView: Sent stroke \(attemptData.strokeIndex) for analysis")
+        // Move the heavy stroke analysis calculation to a background queue
+        // This prevents UI blockage during fast writing
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Calculate stroke accuracy (computationally intensive)
+            let accuracy = StrokeAnalysis.calculateAccuracy(
+                drawnPoints: attemptData.drawnPoints, 
+                expectedStroke: attemptData.expectedStroke
+            )
+            
+            // Create analysis input with all data
+            let input = StrokeAnalysisInput(
+                strokeIndex: attemptData.strokeIndex, 
+                expectedStroke: attemptData.expectedStroke, 
+                strokeStartTime: attemptData.strokeStartTime, 
+                strokeEndTime: attemptData.strokeEndTime,
+                strokeAccuracy: accuracy, 
+                speechStartTime: attemptData.speechStartTime, 
+                speechEndTime: attemptData.speechEndTime, 
+                finalTranscription: attemptData.finalTranscription,
+                transcriptionMatched: attemptData.transcriptionMatched, 
+                speechConfidence: attemptData.speechConfidence
+            )
+            
+            // Back to main thread to update UI and send to analyzer
+            DispatchQueue.main.async {
+                // Send to analyzer for processing
+                self.concurrencyAnalyzer.analyzeStroke(input: input)
+                print("MainView: Sent stroke \(attemptData.strokeIndex) for analysis")
+            }
+        }
     }
 }
 
