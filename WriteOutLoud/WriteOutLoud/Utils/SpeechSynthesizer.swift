@@ -14,7 +14,7 @@ struct SpeechSynthesizer {
     /**
      Speaks the given text using the specified BCP-47 language code.
 
-     - Parameters:
+     - Parameters:
        - text: The string to be spoken.
        - language: The BCP-47 language code (e.g., "en-US", "zh-CN"). Defaults to "zh-CN".
      */
@@ -24,6 +24,9 @@ struct SpeechSynthesizer {
             print("SpeechSynthesizer: Cannot speak empty text.")
             return
         }
+
+        // Configure audio session for playback
+        configureAudioSessionForPlayback()
 
         // Stop any currently speaking utterance before starting a new one
         // This prevents overlap if the user taps quickly.
@@ -51,6 +54,19 @@ struct SpeechSynthesizer {
         if synthesizer.isSpeaking {
             print("SpeechSynthesizer: Stopping current speech.")
             synthesizer.stopSpeaking(at: .immediate)
+        }
+    }
+    
+    // Configure the audio session for playback
+    private static func configureAudioSessionForPlayback() {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            print("SpeechSynthesizer: Configuring audio session for playback")
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            print("SpeechSynthesizer: Audio session configured successfully for playback")
+        } catch {
+            print("SpeechSynthesizer: Failed to configure audio session for playback: \(error)")
         }
     }
 }

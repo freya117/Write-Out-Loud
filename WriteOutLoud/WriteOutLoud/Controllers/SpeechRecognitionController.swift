@@ -962,17 +962,41 @@ class SpeechRecognitionController: NSObject, ObservableObject, SFSpeechRecognize
         if audioEngine.isRunning { audioEngine.stop(); print("Audio engine stopped.") }
         if isTapInstalled { audioEngine.inputNode.removeTap(onBus: 0); isTapInstalled = false; print("Audio tap removed.") }
         recognitionRequest?.endAudio()
-        do { try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation); print("Audio session deactivated.") }
-        catch { print("Failed to deactivate audio session: \(error)") }
+        
+        // Properly release audio session
+        do { 
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            print("Audio session deactivated.")
+            
+            // Reset audio session category to ambient (default) to allow other sessions to work
+            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+            print("Audio session reset to ambient category.")
+        }
+        catch { 
+            print("Failed to deactivate audio session: \(error)") 
+        }
+        
+        // Nil out recognition objects
+        recognitionRequest = nil
+        recognitionTask = nil
     }
     
     private func cleanupAfterError() {
         recognitionRequest?.endAudio()
         if audioEngine.isRunning { audioEngine.stop() }
         if isTapInstalled { audioEngine.inputNode.removeTap(onBus: 0); isTapInstalled = false }
+        
+        // Properly release audio session
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            try AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default)
+            print("Audio session reset after error.")
+        } catch {
+            print("Failed to reset audio session after error: \(error)")
+        }
+        
         self.recognitionRequest = nil
         self.recognitionTask = nil
-        try? AVAudioSession.sharedInstance().setActive(false)
     }
     
     func stopRecording() {
