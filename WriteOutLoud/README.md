@@ -1,14 +1,59 @@
-# Write Out Loud - README
+# Write Out Loud
 
-## 1. Introduction
+## Project Information
 
-Write Out Loud is an iPadOS application designed to help users learn Chinese characters through a multimodal approach. It combines handwriting input (using Apple Pencil) with simultaneous speech input (vocalizing stroke names). The app provides feedback *after* the user completes writing the entire character, focusing on reinforcing stroke order memory and improving handwriting quality.
+**Repository:** [https://github.com/junruren/Write-Out-Loud](https://github.com/junruren/Write-Out-Loud)
 
-The reference panel (left) shows a static image of the character, its pinyin/meaning, and an animated GIF demonstrating the correct stroke order. The writing panel (right) contains the drawing canvas where the user writes. During practice, a top bar displays the sequence of stroke names ("Number. Pinyin ChineseChar") and the current transcript. After completion, this bar shows vocalization feedback (correct/incorrect icons), and the user's drawn strokes on the canvas are colored based on accuracy (inaccurate strokes turn red). Tapping the canvas after feedback resets the attempt.
+**Course:** MIT 6.8510 Intelligent Multimodal User Interfaces
 
-This project is built using SwiftUI for the user interface and leverages Apple's PencilKit for handwriting input and the Speech framework for voice recognition.
+**Description:** A multimodal Chinese character learning application that combines handwriting input with speech recognition to provide an immersive learning experience.
 
-## 2. Project Structure and File Descriptions
+## Setup Instructions
+
+### Requirements
+
+- **Hardware:**
+  - iPad with Apple Pencil support
+  - Mac computer for development
+
+- **Software:**
+  - macOS 13.0+ (Ventura or newer)
+  - Xcode 14.0+ (with iOS/iPadOS SDK 14.0+)
+  - Git (for cloning the repository)
+
+### Installation Steps
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/junruren/Write-Out-Loud.git
+   cd Write-Out-Loud
+   ```
+
+2. **Open the project in Xcode:**
+   ```bash
+   open WriteOutLoud/WriteOutLoud.xcodeproj
+   ```
+
+3. **Configure development team:**
+   - In Xcode, select the WriteOutLoud project in the Navigator
+   - Select the WriteOutLoud target
+   - Under the Signing & Capabilities tab, select your development team
+
+4. **Connect your iPad:**
+   - Connect your iPad to your Mac
+   - In Xcode, select your iPad as the deployment target
+
+5. **Build and run:**
+   - Click the Run button in Xcode or press Cmd+R
+   - The app will be installed and launched on your iPad
+
+### Required Permissions
+
+The app requires the following permissions which you'll need to grant when prompted:
+- Microphone access (for speech recognition)
+- Speech recognition
+
+## Files and Directory Structure
 
 The project follows a standard Model-View-Controller (MVC) inspired pattern, adapted for SwiftUI's declarative nature, with additional utility and controller components.
 
@@ -24,15 +69,13 @@ WriteOutLoud/
 ├── Views/
 │   ├── MainView.swift            # Central coordinating view. Manages controllers, state (completion, interaction), delegates, and subviews. Creates final colored feedback drawing.
 │   ├── ReferenceView.swift       # Displays character info (static image, pinyin, meaning) and animated stroke order GIF (Left Panel).
-│   ├── WritingPaneView.swift     # Container for the writing area. Includes StrokeInfoBar, trace image guide, transcript display, and the main canvas area. Handles tap-to-reset.
+│   ├── WritingPaneView.swift     # Container for the writing area. Includes StrokeInfoBar, StrokeNamePill, trace image guide, transcript display, and the main canvas area. Handles tap-to-reset.
 │   ├── CanvasView.swift          # SwiftUI wrapper for the interactive PKCanvasView.
-│   ├── StaticCanvasView.swift    # Helper SwiftUI wrapper to display a static, non-interactive PKDrawing (used for final feedback).
-│   ├── StrokeInfoBar.swift       # (Implicitly part of WritingPaneView) Displays stroke sequence during practice and vocalization feedback after completion.
-│   ├── StrokeNamePill.swift      # (Implicitly part of WritingPaneView) Helper view for displaying individual stroke info/feedback in the StrokeInfoBar.
 │   ├── GifImageView.swift        # SwiftUI wrapper for WKWebView to display animated GIFs from Data.
 │   ├── CharacterSelectionView.swift# Horizontal scroll view for selecting characters.
-│   └── ButtonStyles.swift        # Custom SwiftUI ButtonStyle definitions (if used).
-│   └── (Removed) FeedbackView.swift # Pop-up feedback view is no longer used.
+│   ├── StrokeView.swift          # Used for displaying and drawing individual strokes.
+│   ├── ButtonStyles.swift        # Custom SwiftUI ButtonStyle definitions.
+│   └── GuideView.swift           # Guide view for displaying stroke information.
 │
 ├── Controllers/
 │   ├── StrokeInputController.swift # Manages PKCanvasView interaction, captures stroke points and timings. Tracks current expected stroke index.
@@ -62,11 +105,9 @@ WriteOutLoud/
 * **Views:** Handle UI.
     * `MainView`: Orchestrates the flow, manages key state (`isCharacterPracticeComplete`, `isCanvasInteractionEnabled`, `finalDrawingWithFeedback`), handles delegate callbacks, creates the final colored drawing.
     * `ReferenceView`: Shows static info and GIF animation.
-    * `WritingPaneView`: Contains the writing area. Includes `StrokeInfoBar`, trace image, real-time transcript display, interactive canvas (during practice) or static canvas (for feedback). Handles tap-to-reset gesture. Controlled by `isInteractionEnabled`.
-    * `StrokeInfoBar`/`StrokeNamePill`: Display stroke sequence ("Number. Pinyin ChineseChar"), real-time transcript, and vocalization feedback icons. Includes playable pronunciation buttons for each stroke.
+    * `WritingPaneView`: Contains the writing area, including `StrokeInfoBar` and `StrokeNamePill` implementations, trace image, real-time transcript display, interactive canvas (during practice) or static canvas (for feedback). Handles tap-to-reset gesture. Controlled by `isInteractionEnabled`.
     * `CanvasView`: Wrapper for the interactive `PKCanvasView`.
     * `StaticCanvasView`: Helper to display the final, non-interactive colored drawing.
-    * `FeedbackView`: Removed.
 * **Controllers:** Manage logic.
     * `StrokeInputController`: Handles drawing input via `PKCanvasViewDelegate`.
     * `SpeechRecognitionController`: Handles voice input via `SFSpeechRecognizer`. Now features continuous recording during character practice, speech segmentation based on stroke timing, and similar-sounding word matching for Chinese pronunciations.
@@ -75,6 +116,18 @@ WriteOutLoud/
 * **Utils:** Helper functions.
     * `SpeechSynthesizer`: Provides text-to-speech functionality for pronouncing stroke names.
 * **Other:** App entry, Assets, optional JSON data, GIF/Sound file locations.
+
+## 1. Introduction
+
+Write Out Loud is an iPadOS application designed to help users learn Chinese characters through a multimodal approach. It combines handwriting input (using Apple Pencil) with simultaneous speech input (vocalizing stroke names). The app provides feedback *after* the user completes writing the entire character, focusing on reinforcing stroke order memory and improving handwriting quality.
+
+The reference panel (left) shows a static image of the character, its pinyin/meaning, and an animated GIF demonstrating the correct stroke order. The writing panel (right) contains the drawing canvas where the user writes. During practice, a top bar displays the sequence of stroke names ("Number. Pinyin ChineseChar") and the current transcript. After completion, this bar shows vocalization feedback (correct/incorrect icons), and the user's drawn strokes on the canvas are colored based on accuracy (inaccurate strokes turn red). Tapping the canvas after feedback resets the attempt.
+
+This project is built using SwiftUI for the user interface and leverages Apple's PencilKit for handwriting input and the Speech framework for voice recognition.
+
+## 2. Project Structure and File Descriptions
+
+The project follows a standard Model-View-Controller (MVC) inspired pattern, adapted for SwiftUI's declarative nature, with additional utility and controller components.
 
 ## 3. Logic and Pipeline
 
@@ -131,7 +184,7 @@ The application allows users to select a character and practice writing it strok
         * Iterates through `concurrencyAnalyzer.analysisHistory`. For each analyzed stroke:
             * Finds the corresponding stroke in the `PKDrawing`.
             * Creates a *new* `PKStroke` based on the drawn one.
-            * If accuracy < threshold (e.g., 70%), sets the new stroke's ink color to red. Otherwise, sets it to green for correct strokes.
+            * If accuracy < threshold (60%), sets the new stroke's ink color to red. Otherwise, sets it to green for correct strokes.
             * Appends the recolored new stroke to a list.
         * Appends any extra drawn strokes (beyond the expected count) with their original color.
         * Creates `finalFeedbackDrawing = PKDrawing(strokes: coloredStrokes)`.
@@ -187,9 +240,11 @@ The app requires user permission for Microphone Access and Speech Recognition. E
 
 * **Similar-Sounding Word Recognition:** The app now recognizes similar-sounding Chinese words and treats them as correct matches. For example, saying "树" (shù) will be recognized as a match for "竖" (shù) since they have the same pronunciation.
 
-* **Real-time Transcript Display:** The transcript is now displayed in real-time below the instruction "Vocalize your stroke while writing" and remains visible throughout the practice session.
+* **Real-time Transcript Display:** The transcript is now displayed in real-time below the instruction "Vocalize your stroke while writing" and remains visible throughout the practice session. The "Show Real-time Transcript" toggle is positioned on the right side with the label next to the switch.
 
-* **Playable Stroke Names:** Both the speaker icon and play button in the `StrokeNamePill` component now allow users to hear the pronunciation of each stroke name at any time, including in the results page.
+* **Playable Stroke Names:** The speaker icon in the `StrokeNamePill` component now allows users to hear the pronunciation of each stroke name at any time, including in the results page.
+
+* **UI Improvements:** The "Characters Selection" title is now left-aligned for better readability, and the transcript container maintains a stable frame even when toggled off to prevent layout shifts.
 
 * **Color Coding:** Correct stroke pronunciations are now displayed in green, incorrect in red, and undetected in gray (previously orange) in both the transcript history and stroke info bar.
 
@@ -197,7 +252,13 @@ The app requires user permission for Microphone Access and Speech Recognition. E
 
 * **Final Drawing Coloring:** `MainView` is responsible for creating the final `PKDrawing` with colored strokes in the `overallAnalysisCompleted` delegate. It iterates through the *analysis history* and colors the corresponding strokes in a *copy* of the user's drawing.
 
-* **Stroke Info Bar:** This bar in `WritingPaneView` displays the stroke sequence ("Number. Pinyin ChineseChar") during practice and switches to vocalization icons (checkmark/cross/question mark) after completion. Font size has been increased.
+* **Stroke Accuracy Threshold:** The accuracy threshold for coloring strokes has been lowered from 70% to 60% to be more accommodating of slight variations in stroke shape.
+
+* **Reduced Processing Delay:** The delay after stroke completion has been reduced from 0.6 seconds to 0.3 seconds to enhance responsiveness during fast writing while still allowing time for speech processing.
+
+* **Background Processing:** Heavy stroke analysis calculations are now performed on a background thread to prevent UI blockage and improve the app's responsiveness during fast writing.
+
+* **Stroke Info Bar:** The `StrokeInfoBar` in `WritingPaneView` displays the stroke sequence ("Number. Pinyin ChineseChar") during practice and switches to vocalization icons (checkmark/cross/question mark) after completion. Text color adjusts properly for dark mode.
 
 * **Interaction Lock & Reset:** The canvas is disabled (`allowsHitTesting(false)`) via `isCanvasInteractionEnabled` state in `MainView` immediately after the last stroke ends and during final feedback display. Tapping the writing pane *after* feedback is shown triggers a reset via the `onTapToWriteAgain` closure passed from `MainView`.
 
