@@ -46,6 +46,27 @@ class CharacterDataManager: ObservableObject {
         print("CharacterDataManager initialized. Loaded \(characters.count) characters. Current character: \(currentCharacter?.character ?? "None"). Error: \(errorLoadingData ?? "None")")
     }
 
+    // MARK: - Character Access Methods
+    
+    // Get a character by its ID - used for showing progress in UserProfileView
+    func getCharacterById(_ id: String) -> Character? {
+        return characters.first(where: { $0.id == id })
+    }
+    
+    // Existing method to select a character
+    func selectCharacter(withId id: String) {
+         DispatchQueue.main.async {
+             if let character = self.characters.first(where: { $0.id == id }) {
+                 self.currentCharacter = character
+                 print("Selected character: \(character.character)")
+             } else {
+                 print("Character with ID \(id) not found.")
+             }
+         }
+     }
+
+    // MARK: - Data Loading Methods
+    
     private func loadCharacterDataFromJSON() -> Bool {
         print("Attempting to load character data from JSON: \(characterDataSourceFilename).json")
         guard let url = Bundle.main.url(forResource: characterDataSourceFilename, withExtension: "json") else {
@@ -164,18 +185,6 @@ class CharacterDataManager: ObservableObject {
         }
         return message
     }
-
-
-    func selectCharacter(withId id: String) {
-         DispatchQueue.main.async {
-             if let character = self.characters.first(where: { $0.id == id }) {
-                 self.currentCharacter = character
-                 print("Selected character: \(character.character)")
-             } else {
-                 print("Character with ID \(id) not found.")
-             }
-         }
-     }
 
     // MARK: - Image Loading Function (Keep existing)
     func getCharacterImage(_ character: Character?, type: CharacterImageType) -> UIImage? {
